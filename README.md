@@ -1,25 +1,30 @@
-# Palette
+<p align="center">
+  <img src="public/hero.png" alt="Palette — a keyboard-first command palette for Chrome" width="100%" />
+</p>
 
-A keyboard-first command palette for Chrome — the browser equivalent of VS Code's Quick Open or Raycast.
+<h1 align="center">Palette</h1>
 
-Press **Ctrl + P** (**Cmd + P** on macOS) anywhere to open a floating palette, type to fuzzy-search your open tabs, and hit **Enter** to jump straight to the one you want (focusing its window automatically if it lives elsewhere). The shortcut is configurable in the settings page.
+<p align="center">A keyboard-first command palette for Chrome — the browser equivalent of VS Code's Quick Open or Raycast.</p>
+
+---
+
+Press **Cmd + J** (**Ctrl + J** on Windows/Linux) anywhere to open a floating palette, type to fuzzy-search your open tabs, and hit **Enter** to jump straight to the one you want (focusing its window automatically if it lives elsewhere). The shortcut is configurable in the settings page.
 
 The MVP does exactly one thing — switch tabs — but it's built on an extensible command architecture so new commands (bookmarks, history, "close tab", AI actions, …) drop in without a rewrite.
-
-![Palette icon](public/icons/128.png)
 
 ---
 
 ## Features
 
 - **Instant tab switching** with fuzzy search over title, hostname, and full URL (powered by [Fuse.js](https://www.fusejs.io/)).
-- **Intelligent ranking**: exact > prefix > fuzzy, with a recency nudge from a persisted Most-Recently-Used (MRU) list.
-- **Recent-first default**: with an empty query, your most recently switched-to tabs appear at the top.
+- **Intelligent ranking**: exact > prefix > fuzzy, with a recency nudge for tabs you use often.
+- **Recent-first default**: with an empty query, tabs are ordered by real recency (Chrome's own `lastAccessed`), most recent first.
+- **Hides the current tab**: the tab you're already on is left out of the list, so the top result is the tab you were last on — Enter jumps straight there.
 - **Fully keyboard driven**: Arrow keys, Home/End, Enter, Esc — plus mouse click and hover.
 - **Cross-window**: switching to a tab in another window brings that window to the front.
 - **Move tab to current window**: press **Shift + Enter** (or Shift + click) to pull the selected tab into the window you're in, instead of jumping to it.
 - **Fully configurable keys**: set the open shortcut _and_ every in-palette key (navigate, switch, move-here, close) from the settings page (click the toolbar icon), synced via `chrome.storage.sync`.
-- **Back/forward through tabs**: **Ctrl/Cmd + Shift + ,** (`Cmd + <`) goes back to older tabs and **Ctrl/Cmd + Shift + .** (`Cmd + >`) goes forward — browser-style history navigation over your tab focus order, without opening the palette.
+- **Back/forward through tabs**: **Cmd + ,** goes back to older tabs and **Cmd + .** goes forward (**Ctrl + ,** / **Ctrl + .** on Windows/Linux) — browser-style history navigation over your tab focus order, without opening the palette.
 - **Polished UI**: dark theme, rounded corners, soft shadow, blurred backdrop, and fade animations — rendered in a Shadow DOM so no page styles leak in or out.
 - **Fast at scale**: the search index is rebuilt only when your tabs change, and rows are memoized, so it stays responsive with hundreds of tabs.
 
@@ -76,15 +81,15 @@ Then load the generated `dist/` directory as an unpacked extension (see below). 
 2. Open `chrome://extensions`.
 3. Toggle **Developer mode** on (top-right).
 4. Click **Load unpacked** and select this project's **`dist/`** folder.
-5. Press **Ctrl + P** (**Cmd + P** on macOS) on any normal web page to open Palette.
+5. Press **Cmd + J** (**Ctrl + J** on Windows/Linux) on any normal web page to open Palette.
 
 ### Changing the shortcut
 
 Palette has two independent shortcuts:
 
-- **In-page shortcuts** (open palette + all in-palette keys): handled by the content script, which intercepts chords and suppresses the browser's native action (e.g. Print). Fully configurable from the **settings page** — click the toolbar icon, or right-click it and choose _Options_. The open shortcut requires a modifier; in-palette named keys (arrows, Enter, Esc) can be used bare, while letters need a modifier.
+- **In-page shortcuts** (open palette + all in-palette keys): handled by the content script, which intercepts chords and suppresses the browser's native action (e.g. Cmd/Ctrl + J's Downloads). Fully configurable from the **settings page** — click the toolbar icon, or right-click it and choose _Options_. The open shortcut requires a modifier; in-palette named keys (arrows, Enter, Esc) can be used bare, while letters need a modifier.
 - **Browser-wide command**: managed by Chrome at `chrome://extensions/shortcuts`. Extensions can't change this one programmatically, but it works even on pages where content scripts can't run.
-- **Back/forward tab commands** (`Cmd + Shift + ,` / `Cmd + Shift + .` on macOS, `Ctrl + ...` elsewhere): walk backward/forward through your tab focus history without opening the palette. A manual tab switch resets the cursor to the most recent tab. These are browser-wide commands, so re-bind them at `chrome://extensions/shortcuts`. (`<`/`>` are `Shift + ,` / `Shift + .` on a standard keyboard; if your layout differs, set your own bindings there.)
+- **Back/forward tab commands** (`Cmd + ,` / `Cmd + .` on macOS, `Ctrl + ,` / `Ctrl + .` elsewhere): walk backward/forward through your tab focus history without opening the palette. A manual tab switch resets the cursor to the most recent tab. These are browser-wide commands, so re-bind them at `chrome://extensions/shortcuts`. **Note:** macOS reserves `Cmd + ,` for Settings, so the "back" command may register unbound — assign it at `chrome://extensions/shortcuts`.
 
 > **Note:** content scripts cannot run on `chrome://` pages, the Chrome Web Store, or other restricted URLs, so the palette won't open while those pages are focused. Switch to a normal tab first.
 
@@ -93,7 +98,7 @@ Palette has two independent shortcuts:
 ## How it works
 
 ```
-Ctrl/Cmd+P ──> content-script interceptor / chrome.commands ──> toggle palette
+Cmd/Ctrl+J ──> content-script interceptor / chrome.commands ──> toggle palette
                                    │  (typed RPC + snapshot broadcast)
                                    ▼
                          Content script (Shadow DOM React UI)
