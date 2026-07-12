@@ -61,6 +61,10 @@ export interface PaletteItem {
   altAction?: PaletteAction | undefined;
   /** Ranking score; lower is better. Set by the provider during search. */
   score?: number;
+  /** Native tab group label when the tab belongs to a group. */
+  groupTitle?: string | undefined;
+  /** Native tab group color name (`blue`, `red`, …). */
+  groupColor?: string | undefined;
 }
 
 /**

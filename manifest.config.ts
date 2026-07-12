@@ -1,12 +1,14 @@
 import { defineManifest } from '@crxjs/vite-plugin';
 import pkg from './package.json' with { type: 'json' };
+import { OMNIBOX_KEYWORD } from './src/constants/omnibox';
 
 /**
  * Manifest V3 definition for Palette.
  *
  * Permissions are intentionally minimal:
- * - `tabs`    : read tab metadata (title, url, favIconUrl) and activate tabs.
- * - `storage` : persist the Most-Recently-Used (MRU) tab history.
+ * - `tabs`      : read tab metadata (title, url, favIconUrl) and activate tabs.
+ * - `tabGroups` : create and manage native Chrome tab groups for domain grouping.
+ * - `storage`   : persist the Most-Recently-Used (MRU) tab history.
  *
  * Window focusing uses `chrome.windows.update`, which does not require an extra
  * permission. No host permissions are requested beyond the content-script match
@@ -23,7 +25,7 @@ export default defineManifest({
     48: 'public/icons/48.png',
     128: 'public/icons/128.png',
   },
-  permissions: ['tabs', 'storage'],
+  permissions: ['tabs', 'tabGroups', 'storage'],
   background: {
     service_worker: 'src/background/index.ts',
     type: 'module',
@@ -35,7 +37,19 @@ export default defineManifest({
     page: 'src/options/index.html',
     open_in_tab: true,
   },
+  chrome_url_overrides: {
+    newtab: 'src/newtab/index.html',
+  },
+  omnibox: {
+    keyword: OMNIBOX_KEYWORD,
+  },
   content_scripts: [
+    {
+      matches: ['<all_urls>'],
+      js: ['src/content/keyboardShield.ts'],
+      run_at: 'document_start',
+      all_frames: false,
+    },
     {
       matches: ['<all_urls>'],
       js: ['src/content/index.tsx'],
@@ -44,6 +58,8 @@ export default defineManifest({
     },
   ],
   commands: {
+    // Chrome MV3 allows at most four manifest commands. Group-scoped back/forward
+    // (Cmd/Ctrl+Shift+,/.) are intercepted by the content script instead.
     'toggle-palette': {
       suggested_key: {
         // Ctrl+J collides with Chrome's Downloads on Win/Linux; the
@@ -53,6 +69,13 @@ export default defineManifest({
         mac: 'Command+J',
       },
       description: 'Open or close the Palette command bar',
+    },
+    'toggle-palette-group': {
+      suggested_key: {
+        default: 'Ctrl+Shift+J',
+        mac: 'Command+Shift+J',
+      },
+      description: 'Open Palette scoped to the current tab group',
     },
     'previous-tab': {
       suggested_key: {

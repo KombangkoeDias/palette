@@ -8,6 +8,10 @@ export default defineConfig({
   plugins: [react(), crx({ manifest })],
   build: {
     target: 'esnext',
+    rollupOptions: {
+      // Keep content-script entry exports so CRXJS can call onExecute().
+      preserveEntrySignatures: 'exports-only',
+    },
   },
   server: {
     // A stable port keeps content-script HMR reliable during development.

@@ -1,4 +1,5 @@
 import type { PaletteAction } from '../commands/types';
+import type { FrequentSite, TabClusterRef, TabGroupsSnapshot } from './groups';
 import type { PaletteTab } from './tab';
 
 /**
@@ -20,19 +21,37 @@ export interface PaletteSnapshot {
 }
 
 /** Requests the UI can issue to the background worker. */
-export type RpcRequest = { type: 'GET_SNAPSHOT' } | { type: 'RUN_ACTION'; action: PaletteAction };
+export type RpcRequest =
+  | { type: 'GET_SNAPSHOT' }
+  | { type: 'RUN_ACTION'; action: PaletteAction }
+  | { type: 'NAVIGATE_TAB_HISTORY'; direction: 'back' | 'forward'; scope: 'group' }
+  | { type: 'GET_TAB_GROUPS' }
+  | { type: 'MOVE_CLUSTER_HERE'; cluster: TabClusterRef }
+  | { type: 'FOCUS_CLUSTER'; cluster: TabClusterRef }
+  | { type: 'OPEN_FREQUENT_SITE'; site: FrequentSite }
+  | { type: 'REMOVE_FREQUENT_SITE'; domain: string }
+  | { type: 'CLOSE_TAB'; tabId: number }
+  | { type: 'CLOSE_CLUSTER'; cluster: TabClusterRef };
 
 /** Maps each request `type` to its response payload. */
 export interface RpcResponseMap {
   GET_SNAPSHOT: PaletteSnapshot;
   RUN_ACTION: { ok: true };
+  NAVIGATE_TAB_HISTORY: { ok: true };
+  GET_TAB_GROUPS: TabGroupsSnapshot;
+  MOVE_CLUSTER_HERE: { ok: true };
+  FOCUS_CLUSTER: { ok: true };
+  OPEN_FREQUENT_SITE: { ok: true };
+  REMOVE_FREQUENT_SITE: { ok: true };
+  CLOSE_TAB: { ok: true };
+  CLOSE_CLUSTER: { ok: true };
 }
 
 export type RpcResponseFor<T extends RpcRequest['type']> = RpcResponseMap[T];
 
 /** One-way messages pushed from the background worker to content scripts. */
 export type BackgroundPush =
-  | { type: 'TOGGLE_PALETTE' }
+  | { type: 'TOGGLE_PALETTE'; scope?: 'all' | 'group'; groupId?: number | undefined }
   | { type: 'SNAPSHOT_CHANGED'; snapshot: PaletteSnapshot }
   | { type: 'SHOW_TAB_SWITCHER'; tabs: PaletteTab[]; activeIndex: number };
 
@@ -49,5 +68,8 @@ export function isBackgroundPush(value: unknown): value is BackgroundPush {
 export function isRpcRequest(value: unknown): value is RpcRequest {
   if (typeof value !== 'object' || value === null) return false;
   const type = (value as { type?: unknown }).type;
-  return type === 'GET_SNAPSHOT' || type === 'RUN_ACTION';
+  return type === 'GET_SNAPSHOT' || type === 'RUN_ACTION' || type === 'NAVIGATE_TAB_HISTORY'
+    || type === 'GET_TAB_GROUPS' || type === 'MOVE_CLUSTER_HERE' || type === 'FOCUS_CLUSTER'
+    || type === 'OPEN_FREQUENT_SITE' || type === 'REMOVE_FREQUENT_SITE'
+    || type === 'CLOSE_TAB' || type === 'CLOSE_CLUSTER';
 }

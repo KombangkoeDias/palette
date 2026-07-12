@@ -24,7 +24,12 @@ The MVP does exactly one thing — switch tabs — but it's built on an extensib
 - **Cross-window**: switching to a tab in another window brings that window to the front.
 - **Move tab to current window**: press **Shift + Enter** (or Shift + click) to pull the selected tab into the window you're in, instead of jumping to it.
 - **Fully configurable keys**: set the open shortcut _and_ every in-palette key (navigate, switch, move-here, close) from the settings page (click the toolbar icon), synced via `chrome.storage.sync`.
-- **Back/forward through tabs**: **Cmd + ,** goes back to older tabs and **Cmd + .** goes forward (**Ctrl + ,** / **Ctrl + .** on Windows/Linux) — browser-style history navigation over your tab focus order, without opening the palette.
+- **Back/forward through tabs**: **Cmd + ,** goes back to older tabs and **Cmd + .** goes forward (**Ctrl + ,** / **Ctrl + .** on Windows/Linux) — browser-style history navigation over your tab focus order, without opening the palette. A quick-switch HUD shows the timeline while you walk it.
+- **Back/forward within the current group**: **Cmd + Shift + ,** / **Cmd + Shift + .** (**Ctrl + Shift + ,** / **Ctrl + Shift + .** on Windows/Linux) — same MRU walk, but only among tabs in the current native tab group. Intercepted by the content script (Chrome limits extensions to four manifest shortcuts).
+- **Domain tab grouping**: when a tab navigates to a domain that already has open tabs, it moves into that domain's window and all matching tabs are placed in a native Chrome tab group (labeled and colored by domain). Toggle in settings.
+- **Group-aware palette**: tabs in native Chrome groups show a colored stripe and group label in the search panel.
+- **Search within current group**: **Cmd + Shift + J** (**Ctrl + Shift + J** on Windows/Linux) opens the palette filtered to tabs in the current tab group only.
+- **New tab tab manager**: opening a new tab shows a random scenic wallpaper from a curated set of 100 Unsplash landscapes, with a frosted-glass panel — **Frequent sites** (most-visited domains from your browsing history, grouped or not, 2×5 grid with favicons) above **Open tabs** (native tab groups plus ungrouped tabs clustered by domain, with search, **Move here**, and **Go to** on each card). Type **`grp` + Space** in the address bar (on new tab or anywhere) to fuzzy-search open tabs and jump straight to one.
 - **Polished UI**: dark theme, rounded corners, soft shadow, blurred backdrop, and fade animations — rendered in a Shadow DOM so no page styles leak in or out.
 - **Fast at scale**: the search index is rebuilt only when your tabs change, and rows are memoized, so it stays responsive with hundreds of tabs.
 
@@ -123,6 +128,7 @@ src/
     index.ts         Entry: commands, message router, tab-change listeners
     rpc.ts           Typed request handling + action dispatch
     tabsService.ts   Query/activate tabs, focus windows
+    groupingService.ts  Domain-based tab groups + cross-window consolidation
     mruService.ts    MRU persistence in chrome.storage.local
   content/         Content script that injects the UI
     index.tsx        Shadow DOM mount + React root
@@ -158,7 +164,8 @@ src/
 Only what's needed:
 
 - `tabs` — read tab metadata (title, URL, favicon) and activate tabs.
-- `storage` — persist the MRU history.
+- `tabGroups` — create and manage native Chrome tab groups for domain-based grouping.
+- `storage` — persist settings and the MRU history.
 
 Window focusing uses `chrome.windows.update`, which needs no extra permission. No host permissions are requested beyond the content-script match.
 

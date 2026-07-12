@@ -14,6 +14,34 @@ export function getHostname(url: string): string {
   }
 }
 
+/** True when the tab URL is a browser or extension new-tab page. */
+export function isNewTabUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (trimmed === '' || trimmed === 'about:blank' || trimmed === 'about:newtab') {
+    return true;
+  }
+
+  const lower = trimmed.toLowerCase();
+  if (
+    lower.startsWith('chrome://newtab')
+    || lower.startsWith('edge://newtab')
+    || lower.startsWith('chrome-search://local')
+  ) {
+    return true;
+  }
+
+  try {
+    const { protocol, pathname } = new URL(trimmed);
+    if (protocol === 'chrome-extension:' && pathname.includes('/newtab')) {
+      return true;
+    }
+  } catch {
+    // malformed URL
+  }
+
+  return false;
+}
+
 /**
  * True when a hostname points at the local machine or a private network
  * (loopback, LAN, link-local, or a local mDNS/`.local` name).

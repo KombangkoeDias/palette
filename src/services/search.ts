@@ -24,9 +24,10 @@ const FUSE_OPTIONS: IFuseOptions<PaletteTab> = {
   threshold: 0.45,
   minMatchCharLength: 1,
   keys: [
-    { name: 'title', weight: 0.6 },
-    { name: 'hostname', weight: 0.3 },
-    { name: 'url', weight: 0.1 },
+    { name: 'title', weight: 0.55 },
+    { name: 'hostname', weight: 0.25 },
+    { name: 'groupTitle', weight: 0.15 },
+    { name: 'url', weight: 0.05 },
   ],
 };
 

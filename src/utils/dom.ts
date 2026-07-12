@@ -8,7 +8,7 @@
  * mounted-but-idle.
  */
 
-const HOST_ID = 'palette-root';
+import { PALETTE_HOST_ID } from '../content/constants';
 
 export interface PaletteMount {
   shadowRoot: ShadowRoot;
@@ -18,10 +18,10 @@ export interface PaletteMount {
 
 export function createShadowMount(css: string): PaletteMount {
   // Clean up a prior mount, e.g. after a dev hot-reload of the content script.
-  document.getElementById(HOST_ID)?.remove();
+  document.getElementById(PALETTE_HOST_ID)?.remove();
 
   const host = document.createElement('div');
-  host.id = HOST_ID;
+  host.id = PALETTE_HOST_ID;
   Object.assign(host.style, {
     position: 'fixed',
     inset: '0',

@@ -23,4 +23,10 @@ export interface PaletteTab {
   muted: boolean;
   /** Chrome's last-focused timestamp (ms); higher = more recently used. */
   lastAccessed: number;
+  /** Native tab group id; omitted when ungrouped. */
+  groupId?: number | undefined;
+  /** Tab group label from Chrome (e.g. domain name). */
+  groupTitle?: string | undefined;
+  /** Tab group color name from Chrome (`blue`, `red`, …). */
+  groupColor?: string | undefined;
 }

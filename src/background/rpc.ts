@@ -2,6 +2,17 @@ import type { PaletteSnapshot, RpcRequest, RpcResponseMap } from '../types/messa
 import type { PaletteAction } from '../commands/types';
 import { activateTab, moveTabToWindow, queryAllTabs } from './tabsService';
 import { getMru, recordUrl } from './mruService';
+import { sendToTab } from './pushMessaging';
+import { performTabNavigation } from './tabNavigation';
+import {
+  closeCluster,
+  closeTab,
+  dismissFrequentSite,
+  focusCluster,
+  listTabGroups,
+  moveClusterToWindow,
+  openFrequentSite,
+} from './groupsService';
 
 /**
  * Builds the snapshot the UI renders from (open tabs + MRU order).
@@ -46,6 +57,39 @@ export async function handleRpc(
 
     case 'RUN_ACTION':
       return runAction(request.action, senderWindowId);
+
+    case 'NAVIGATE_TAB_HISTORY':
+      await performTabNavigation(request.direction, request.scope, sendToTab);
+      return { ok: true };
+
+    case 'GET_TAB_GROUPS':
+      return listTabGroups(senderWindowId);
+
+    case 'MOVE_CLUSTER_HERE': {
+      const targetWindowId = await resolveCurrentWindowId(senderWindowId);
+      await moveClusterToWindow(request.cluster, targetWindowId);
+      return { ok: true };
+    }
+
+    case 'FOCUS_CLUSTER':
+      await focusCluster(request.cluster);
+      return { ok: true };
+
+    case 'OPEN_FREQUENT_SITE':
+      await openFrequentSite(request.site);
+      return { ok: true };
+
+    case 'REMOVE_FREQUENT_SITE':
+      await dismissFrequentSite(request.domain);
+      return { ok: true };
+
+    case 'CLOSE_TAB':
+      await closeTab(request.tabId, senderTabId);
+      return { ok: true };
+
+    case 'CLOSE_CLUSTER':
+      await closeCluster(request.cluster, senderTabId);
+      return { ok: true };
 
     default:
       return assertNever(request);

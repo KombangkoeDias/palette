@@ -1,6 +1,7 @@
 import type Fuse from 'fuse.js';
 import type { CommandProvider, PaletteBadge, PaletteItem, ProviderContext } from '../types';
 import type { PaletteTab } from '../../types/tab';
+import { displayFaviconUrl } from '../../utils/favicon';
 import { createTabFuse, searchTabs } from '../../services/search';
 
 /**
@@ -36,11 +37,13 @@ function toItem(tab: PaletteTab, score: number): PaletteItem {
     id: `tab:${String(tab.id)}`,
     title: tab.title,
     subtitle: tab.hostname || tab.url,
-    favIconUrl: tab.favIconUrl,
+    favIconUrl: displayFaviconUrl(tab.favIconUrl, tab.hostname),
     badges: buildBadges(tab),
     action: { type: 'ACTIVATE_TAB', tabId: tab.id, windowId: tab.windowId },
     altAction: { type: 'MOVE_TAB_TO_CURRENT_WINDOW', tabId: tab.id },
     score,
+    groupTitle: tab.groupTitle,
+    groupColor: tab.groupColor,
   };
 }
 

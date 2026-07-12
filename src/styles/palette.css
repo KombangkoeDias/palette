@@ -85,6 +85,26 @@
 
 /* --- Search -------------------------------------------------------------- */
 
+.palette-scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px 0;
+  font-size: 12px;
+}
+
+.palette-scope__label {
+  color: var(--pal-text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.palette-scope__name {
+  color: var(--pal-accent);
+  font-weight: 500;
+}
+
 .palette-search {
   display: flex;
   align-items: center;
@@ -206,6 +226,22 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.palette-row__subtitle-sep {
+  color: var(--pal-text-faint);
+}
+
+.palette-row__group-inline {
+  font-weight: 500;
+}
+
+.palette-row__group {
+  flex: none;
+  width: 3px;
+  align-self: stretch;
+  border-radius: 999px;
+  margin: 2px 0;
 }
 
 .palette-row__badges {

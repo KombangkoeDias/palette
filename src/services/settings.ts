@@ -33,6 +33,25 @@ export function defaultHotkey(): Hotkey {
   return isMac() ? chord('j', { meta: true }) : chord('j', { ctrl: true });
 }
 
+export function defaultGroupHotkey(): Hotkey {
+  return isMac()
+    ? chord('j', { meta: true, shift: true })
+    : chord('j', { ctrl: true, shift: true });
+}
+
+/** Group-scoped MRU walk; handled in the content script (manifest command cap). */
+export function defaultGroupBackHotkey(): Hotkey {
+  return isMac()
+    ? chord(',', { meta: true, shift: true })
+    : chord(',', { ctrl: true, shift: true });
+}
+
+export function defaultGroupForwardHotkey(): Hotkey {
+  return isMac()
+    ? chord('.', { meta: true, shift: true })
+    : chord('.', { ctrl: true, shift: true });
+}
+
 export function defaultKeymap(): Keymap {
   return {
     navigateDown: chord('arrowdown'),
@@ -46,7 +65,13 @@ export function defaultKeymap(): Keymap {
 }
 
 export function defaultSettings(): Settings {
-  return { toggleHotkey: defaultHotkey(), keymap: defaultKeymap() };
+  return {
+    toggleHotkey: defaultHotkey(),
+    toggleGroupHotkey: defaultGroupHotkey(),
+    keymap: defaultKeymap(),
+    groupByDomain: true,
+    theme: 'dark',
+  };
 }
 
 export async function getSettings(): Promise<Settings> {
@@ -149,7 +174,10 @@ function normalizeSettings(value: unknown): Settings {
   const record = value as Record<string, unknown>;
   return {
     toggleHotkey: normalizeHotkey(record.toggleHotkey, defaultHotkey()),
+    toggleGroupHotkey: normalizeHotkey(record.toggleGroupHotkey, defaultGroupHotkey()),
     keymap: normalizeKeymap(record.keymap),
+    groupByDomain: record.groupByDomain !== false,
+    theme: record.theme === 'light' ? 'light' : 'dark',
   };
 }
 

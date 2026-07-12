@@ -46,8 +46,9 @@ export function Options(): ReactElement {
 
   const save = useCallback(() => {
     const toggleOk = isValidHotkey(settings.toggleHotkey, { requireModifier: true });
+    const groupToggleOk = isValidHotkey(settings.toggleGroupHotkey, { requireModifier: true });
     const keysOk = PALETTE_ACTIONS.every((action) => isValidHotkey(settings.keymap[action.id]));
-    if (!toggleOk || !keysOk) {
+    if (!toggleOk || !groupToggleOk || !keysOk) {
       setStatus('invalid');
       return;
     }
@@ -107,7 +108,52 @@ export function Options(): ReactElement {
       </section>
 
       <section className="opt__card">
-        <h2 className="opt__heading">Inside the palette</h2>
+        <div className="opt__row">
+          <div>
+            <h2 className="opt__heading">Open palette in current group</h2>
+            <p className="opt__help">
+              Opens the palette filtered to tabs in the same native Chrome tab group as the
+              current tab. Default: Cmd/Ctrl + Shift + J.
+            </p>
+          </div>
+          <HotkeyRecorder
+            value={settings.toggleGroupHotkey}
+            onChange={(toggleGroupHotkey) => {
+              setSettings((prev) => ({ ...prev, toggleGroupHotkey }));
+              setStatus('idle');
+            }}
+            invalid={!isValidHotkey(settings.toggleGroupHotkey, { requireModifier: true })}
+          />
+        </div>
+      </section>
+
+      <section className="opt__card">
+        <div className="opt__row">
+          <div>
+            <h2 className="opt__heading">Group tabs by domain</h2>
+            <p className="opt__help">
+              When a tab navigates to a domain that already has open tabs, move it into that
+              domain&apos;s window and place matching tabs in a native Chrome tab group (labeled and
+              colored by domain).
+            </p>
+          </div>
+          <label className="opt__toggle">
+            <input
+              type="checkbox"
+              checked={settings.groupByDomain}
+              onChange={(event) => {
+                setSettings((prev) => ({ ...prev, groupByDomain: event.target.checked }));
+                setStatus('idle');
+              }}
+            />
+            <span className="opt__toggle-label">
+              {settings.groupByDomain ? 'On' : 'Off'}
+            </span>
+          </label>
+        </div>
+      </section>
+
+      <section className="opt__card">
         <p className="opt__help">
           These keys work while the palette is open. Named keys (arrows, Enter, Esc…) can be used on
           their own; letters need a modifier.

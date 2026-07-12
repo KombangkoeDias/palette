@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { PaletteTab } from '../types/tab';
+import { displayFaviconUrl } from '../utils/favicon';
 
 interface TabSwitcherProps {
   tabs: PaletteTab[];
@@ -39,12 +40,13 @@ export function TabSwitcher({ tabs, activeIndex }: TabSwitcherProps): ReactEleme
 /** Favicon with a colored letter-avatar fallback when the image is missing. */
 function Favicon({ tab }: { tab: PaletteTab }): ReactElement {
   const [errored, setErrored] = useState(false);
+  const iconUrl = displayFaviconUrl(tab.favIconUrl, tab.hostname);
 
-  if (tab.favIconUrl !== undefined && tab.favIconUrl !== '' && !errored) {
+  if (iconUrl !== undefined && !errored) {
     return (
       <img
         className="pal-switcher__favicon"
-        src={tab.favIconUrl}
+        src={iconUrl}
         alt=""
         onError={() => {
           setErrored(true);

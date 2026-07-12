@@ -4,16 +4,12 @@ import { App } from './App';
 import { createShadowMount } from '../utils/dom';
 import paletteCss from '../styles/palette.css?inline';
 
-function mountPalette(): void {
+/** Mounts the palette overlay (shadow root + content-script App). */
+export function mountPalette(): void {
   const { container } = createShadowMount(paletteCss);
   createRoot(container).render(
     <StrictMode>
       <App />
     </StrictMode>,
   );
-}
-
-/** CRXJS calls this when the content script loads on a page. */
-export function onExecute(): void {
-  mountPalette();
 }

@@ -3,8 +3,14 @@ import { Palette } from '../components/Palette';
 import { TabSwitcher } from '../components/TabSwitcher';
 import { isBackgroundPush } from '../types/messages';
 import type { PaletteTab } from '../types/tab';
+import type { PaletteScope } from '../types/settings';
 import { useSettings } from '../hooks/useSettings';
-import { matchesHotkey } from '../services/settings';
+import { PALETTE_OPEN_ATTR } from './constants';
+import {
+  defaultGroupBackHotkey,
+  defaultGroupForwardHotkey,
+  matchesHotkey,
+} from '../services/settings';
 
 // If both the background command and the in-page interceptor react to the same
 // keypress, ignore the second toggle that lands within this window.
@@ -18,6 +24,14 @@ interface SwitcherState {
   activeIndex: number;
 }
 
+interface PaletteState {
+  open: boolean;
+  scope: PaletteScope;
+  filterGroupId?: number | undefined;
+}
+
+const CLOSED_PALETTE: PaletteState = { open: false, scope: 'all' };
+
 /**
  * Root content-script component.
  *
@@ -27,28 +41,87 @@ interface SwitcherState {
  * open and therefore always starts from an up-to-date snapshot.
  */
 export function App(): React.ReactElement | null {
-  const [open, setOpen] = useState(false);
+  const [palette, setPalette] = useState<PaletteState>(CLOSED_PALETTE);
   const [switcher, setSwitcher] = useState<SwitcherState | null>(null);
   const switcherTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const lastToggleAt = useRef(0);
   const settings = useSettings();
-  // Kept in a ref so the keydown listener always sees the latest hotkey without
-  // being torn down and re-attached on every settings change.
   const hotkeyRef = useRef(settings.toggleHotkey);
+  const groupHotkeyRef = useRef(settings.toggleGroupHotkey);
+  const groupBackHotkeyRef = useRef(defaultGroupBackHotkey());
+  const groupForwardHotkeyRef = useRef(defaultGroupForwardHotkey());
+
   useEffect(() => {
     hotkeyRef.current = settings.toggleHotkey;
-  }, [settings.toggleHotkey]);
+    groupHotkeyRef.current = settings.toggleGroupHotkey;
+  }, [settings.toggleHotkey, settings.toggleGroupHotkey]);
 
-  // Single, debounced toggle shared by both trigger paths so a single keypress
-  // can never flip the palette twice.
-  const toggle = useCallback(() => {
-    const now = Date.now();
-    if (now - lastToggleAt.current < TOGGLE_DEBOUNCE_MS) return;
-    lastToggleAt.current = now;
-    setOpen((prev) => !prev);
+  const navigateGroupHistory = useCallback((direction: 'back' | 'forward') => {
+    void chrome.runtime.sendMessage({
+      type: 'NAVIGATE_TAB_HISTORY',
+      direction,
+      scope: 'group',
+    });
   }, []);
 
-  // Show the quick-switch HUD, resetting its auto-hide timer on each press.
+  const openPalette = useCallback((scope: PaletteScope, groupId?: number) => {
+    const now = Date.now();
+    const withinDebounce = now - lastToggleAt.current < TOGGLE_DEBOUNCE_MS;
+    lastToggleAt.current = now;
+
+    setPalette((prev) => {
+      const resolvedGroupId =
+        scope === 'group' ? (groupId ?? prev.filterGroupId) : undefined;
+
+      // A second handler often fires within a few ms (content script + manifest
+      // command). Merge into the open palette instead of closing or no-op'ing.
+      if (withinDebounce) {
+        if (!prev.open) {
+          return { open: true, scope, filterGroupId: resolvedGroupId };
+        }
+        if (prev.scope !== scope) {
+          return { open: true, scope, filterGroupId: resolvedGroupId };
+        }
+        if (
+          scope === 'group' &&
+          resolvedGroupId !== undefined &&
+          prev.filterGroupId !== resolvedGroupId
+        ) {
+          return { ...prev, filterGroupId: resolvedGroupId };
+        }
+        return prev;
+      }
+
+      const sameMode =
+        prev.open &&
+        prev.scope === scope &&
+        (scope === 'all' || prev.filterGroupId === resolvedGroupId);
+      if (sameMode) return CLOSED_PALETTE;
+      return { open: true, scope, filterGroupId: resolvedGroupId };
+    });
+  }, []);
+
+  const toggleAll = useCallback(() => {
+    openPalette('all');
+  }, [openPalette]);
+
+  const applyGroupFilter = useCallback((groupId: number) => {
+    setPalette((prev) => {
+      if (!prev.open || prev.scope !== 'group') return prev;
+      if (prev.filterGroupId === groupId) return prev;
+      return { ...prev, filterGroupId: groupId };
+    });
+  }, []);
+
+  const toggleGroup = useCallback(() => {
+    openPalette('group');
+    void chrome.tabs.getCurrent().then((tab) => {
+      const groupId =
+        tab?.groupId !== undefined && tab.groupId !== -1 ? tab.groupId : undefined;
+      if (groupId !== undefined) applyGroupFilter(groupId);
+    });
+  }, [openPalette, applyGroupFilter]);
+
   const showSwitcher = useCallback((next: SwitcherState) => {
     setSwitcher(next);
     if (switcherTimer.current !== undefined) clearTimeout(switcherTimer.current);
@@ -57,12 +130,13 @@ export function App(): React.ReactElement | null {
     }, SWITCHER_VISIBLE_MS);
   }, []);
 
-  // Background pushes: toggle the palette, or show the back/forward HUD.
   useEffect(() => {
     const listener = (message: unknown): void => {
       if (!isBackgroundPush(message)) return;
-      if (message.type === 'TOGGLE_PALETTE') toggle();
-      else if (message.type === 'SHOW_TAB_SWITCHER') {
+      if (message.type === 'TOGGLE_PALETTE') {
+        if (message.scope === 'group') openPalette('group', message.groupId);
+        else openPalette('all');
+      } else if (message.type === 'SHOW_TAB_SWITCHER') {
         showSwitcher({ tabs: message.tabs, activeIndex: message.activeIndex });
       }
     };
@@ -70,7 +144,7 @@ export function App(): React.ReactElement | null {
     return () => {
       chrome.runtime.onMessage.removeListener(listener);
     };
-  }, [toggle, showSwitcher]);
+  }, [openPalette, showSwitcher]);
 
   useEffect(
     () => () => {
@@ -79,36 +153,57 @@ export function App(): React.ReactElement | null {
     [],
   );
 
-  // In-page interceptor for the configured hotkey (default Cmd/Ctrl+J).
-  //
-  // We must handle this in the page and call preventDefault(), otherwise the
-  // browser's native action for the chord (e.g. Ctrl+J Downloads) fires.
-  // Running in the capture phase lets us beat both the page's own handlers and
-  // the default.
+  useEffect(() => {
+    if (palette.open) document.documentElement.setAttribute(PALETTE_OPEN_ATTR, '');
+    else document.documentElement.removeAttribute(PALETTE_OPEN_ATTR);
+    return () => document.documentElement.removeAttribute(PALETTE_OPEN_ATTR);
+  }, [palette.open]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
+      if (matchesHotkey(event, groupBackHotkeyRef.current)) {
+        event.preventDefault();
+        event.stopPropagation();
+        navigateGroupHistory('back');
+        return;
+      }
+      if (matchesHotkey(event, groupForwardHotkeyRef.current)) {
+        event.preventDefault();
+        event.stopPropagation();
+        navigateGroupHistory('forward');
+        return;
+      }
+      if (matchesHotkey(event, groupHotkeyRef.current)) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleGroup();
+        return;
+      }
       if (!matchesHotkey(event, hotkeyRef.current)) return;
       event.preventDefault();
       event.stopPropagation();
-      toggle();
+      toggleAll();
     };
-    document.addEventListener('keydown', onKeyDown, { capture: true });
+    // Window capture runs before document-level page shortcuts (YouTube, etc.).
+    window.addEventListener('keydown', onKeyDown, { capture: true });
     return () => {
-      document.removeEventListener('keydown', onKeyDown, { capture: true });
+      window.removeEventListener('keydown', onKeyDown, { capture: true });
     };
-  }, [toggle]);
+  }, [toggleAll, toggleGroup, navigateGroupHistory]);
 
   const close = useCallback(() => {
-    setOpen(false);
+    setPalette(CLOSED_PALETTE);
   }, []);
 
-  if (!open && switcher === null) return null;
+  if (!palette.open && switcher === null) return null;
   return (
     <>
       {switcher !== null ? (
         <TabSwitcher tabs={switcher.tabs} activeIndex={switcher.activeIndex} />
       ) : null}
-      {open ? <Palette onClose={close} /> : null}
+      {palette.open ? (
+        <Palette scope={palette.scope} filterGroupId={palette.filterGroupId} onClose={close} />
+      ) : null}
     </>
   );
 }

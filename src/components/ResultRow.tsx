@@ -1,6 +1,9 @@
 import { memo, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { PaletteItem } from '../commands/types';
+import { tabGroupCssColor } from '../utils/tabGroupColors';
+import { displayFaviconUrl } from '../utils/favicon';
+import { groupTitleDiffersFromHost } from '../utils/groupDisplay';
 import { Badge } from './Badge';
 
 interface ResultRowProps {
@@ -20,6 +23,9 @@ function ResultRowComponent({
   onSelectAlt,
   onHover,
 }: ResultRowProps): ReactElement {
+  const groupColor = tabGroupCssColor(item.groupColor);
+  const showGroupName = groupTitleDiffersFromHost(item.groupTitle, item.subtitle);
+
   return (
     <li role="option" aria-selected={active}>
       <button
@@ -34,11 +40,32 @@ function ResultRowComponent({
           onHover(index);
         }}
       >
+        {groupColor !== undefined ? (
+          <span
+            className="palette-row__group"
+            style={{ background: groupColor }}
+            title={item.groupTitle ?? 'Tab group'}
+            aria-hidden="true"
+          />
+        ) : null}
         <Favicon item={item} />
         <span className="palette-row__text">
           <span className="palette-row__title">{item.title}</span>
           {item.subtitle !== undefined && item.subtitle !== '' ? (
-            <span className="palette-row__subtitle">{item.subtitle}</span>
+            <span className="palette-row__subtitle">
+              {item.subtitle}
+              {showGroupName && item.groupTitle !== undefined ? (
+                <>
+                  <span className="palette-row__subtitle-sep"> · </span>
+                  <span
+                    className="palette-row__group-inline"
+                    style={groupColor !== undefined ? { color: groupColor } : undefined}
+                  >
+                    {item.groupTitle}
+                  </span>
+                </>
+              ) : null}
+            </span>
           ) : null}
         </span>
         {item.badges.length > 0 ? (
@@ -56,14 +83,14 @@ function ResultRowComponent({
 /** Favicon with a colored letter-avatar fallback when the image is missing. */
 function Favicon({ item }: { item: PaletteItem }): ReactElement {
   const [errored, setErrored] = useState(false);
+  const iconUrl = displayFaviconUrl(item.favIconUrl, item.subtitle ?? '');
 
-  if (item.favIconUrl !== undefined && item.favIconUrl !== '' && !errored) {
+  if (iconUrl !== undefined && !errored) {
     return (
       <img
         className="palette-row__favicon"
-        src={item.favIconUrl}
+        src={iconUrl}
         alt=""
-        loading="lazy"
         onError={() => {
           setErrored(true);
         }}

@@ -1,5 +1,4 @@
 import { useCallback, useState } from 'react';
-import type { KeyboardEvent } from 'react';
 import type { Keymap, PaletteKeyAction } from '../types/settings';
 import { matchesHotkey } from '../services/settings';
 
@@ -23,7 +22,8 @@ interface KeyboardNavOptions {
 interface KeyboardNav {
   activeIndex: number;
   setActiveIndex: (index: number) => void;
-  handleKeyDown: (event: KeyboardEvent) => void;
+  /** Handles a palette key chord; returns true when the event was consumed. */
+  handleKeyDown: (event: KeyboardEvent) => boolean;
 }
 
 // Order in which chords are tested. More specific chords (selectAlt = Shift+
@@ -67,12 +67,13 @@ export function useKeyboardNav({
   const activeIndex = itemCount === 0 ? 0 : Math.min(rawIndex, itemCount - 1);
 
   const handleKeyDown = useCallback(
-    (event: KeyboardEvent) => {
+    (event: KeyboardEvent): boolean => {
       const action = RESOLVE_ORDER.find((candidate) =>
-        matchesHotkey(event.nativeEvent, keymap[candidate]),
+        matchesHotkey(event, keymap[candidate]),
       );
-      if (action === undefined) return;
+      if (action === undefined) return false;
       event.preventDefault();
+      event.stopPropagation();
 
       switch (action) {
         case 'navigateDown':
@@ -97,6 +98,7 @@ export function useKeyboardNav({
           onClose();
           break;
       }
+      return true;
     },
     [activeIndex, itemCount, keymap, onClose, onSelect, onSelectAlt],
   );

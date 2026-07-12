@@ -122,6 +122,29 @@ body {
   color: var(--error);
 }
 
+.opt__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.opt__toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-strong);
+  cursor: pointer;
+}
+
+.opt__toggle-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  min-width: 2ch;
+}
+
 .opt__list {
   list-style: none;
   margin: 16px 0 0;

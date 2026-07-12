@@ -1,18 +1,18 @@
 import { memo } from 'react';
-import type { ChangeEvent, KeyboardEvent, ReactElement, RefObject } from 'react';
+import type { ChangeEvent, ReactElement, RefObject } from 'react';
 
 interface SearchInputProps {
   value: string;
   onChange: (value: string) => void;
-  onKeyDown: (event: KeyboardEvent) => void;
   inputRef: RefObject<HTMLInputElement | null>;
+  placeholder?: string;
 }
 
 function SearchInputComponent({
   value,
   onChange,
-  onKeyDown,
   inputRef,
+  placeholder = 'Search tabs…',
 }: SearchInputProps): ReactElement {
   return (
     <div className="palette-search">
@@ -21,17 +21,22 @@ function SearchInputComponent({
         ref={inputRef}
         className="palette-search__input"
         type="text"
-        placeholder="Search tabs..."
+        placeholder={placeholder}
         value={value}
         onChange={(event: ChangeEvent<HTMLInputElement>) => {
           onChange(event.target.value);
         }}
-        onKeyDown={onKeyDown}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+        }}
+        onKeyUp={(event) => {
+          event.stopPropagation();
+        }}
         autoComplete="off"
         autoCorrect="off"
         autoCapitalize="off"
         spellCheck={false}
-        aria-label="Search tabs"
+        aria-label={placeholder}
       />
     </div>
   );

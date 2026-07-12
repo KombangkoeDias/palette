@@ -19,9 +19,19 @@
  * within a session but resets when the browser closes.
  */
 
-const STORAGE_KEY = 'palette:tabHistory';
+import { isNewTabUrl } from '../utils/url';
+
+const GLOBAL_STORAGE_KEY = 'palette:tabHistory';
+const GROUP_STORAGE_KEY = 'palette:tabHistoryGroup';
 
 export type NavDirection = 'back' | 'forward';
+export type NavScope = 'all' | 'group';
+
+export interface NavigateOptions {
+  scope?: NavScope;
+  /** Required when `scope` is `'group'`; use `-1` for ungrouped tabs. */
+  groupId?: number;
+}
 
 export interface NavResult {
   /** The tab to activate. */
@@ -39,11 +49,18 @@ interface HistoryState {
   cursor: number;
   /** The tab we last navigated to; used to detect a continuing walk. */
   lastNavId?: number | undefined;
+  /** Which tab group the frozen snapshot belongs to (group scope only). */
+  groupId?: number | undefined;
 }
 
-async function readState(): Promise<HistoryState> {
-  const stored = await chrome.storage.session.get(STORAGE_KEY);
-  const value = stored[STORAGE_KEY];
+function storageKey(scope: NavScope): string {
+  return scope === 'group' ? GROUP_STORAGE_KEY : GLOBAL_STORAGE_KEY;
+}
+
+async function readState(scope: NavScope): Promise<HistoryState> {
+  const key = storageKey(scope);
+  const stored = await chrome.storage.session.get(key);
+  const value = stored[key];
   if (typeof value !== 'object' || value === null) return { order: [], cursor: 0 };
   const record = value as Record<string, unknown>;
   const order = Array.isArray(record.order)
@@ -51,11 +68,12 @@ async function readState(): Promise<HistoryState> {
     : [];
   const cursor = typeof record.cursor === 'number' ? record.cursor : 0;
   const lastNavId = typeof record.lastNavId === 'number' ? record.lastNavId : undefined;
-  return { order, cursor, lastNavId };
+  const groupId = typeof record.groupId === 'number' ? record.groupId : undefined;
+  return { order, cursor, lastNavId, groupId };
 }
 
-async function writeState(state: HistoryState): Promise<void> {
-  await chrome.storage.session.set({ [STORAGE_KEY]: state });
+async function writeState(scope: NavScope, state: HistoryState): Promise<void> {
+  await chrome.storage.session.set({ [storageKey(scope)]: state });
 }
 
 /**
@@ -65,14 +83,18 @@ async function writeState(state: HistoryState): Promise<void> {
 export async function navigateHistory(
   direction: NavDirection,
   currentId: number | undefined,
+  options: NavigateOptions = {},
 ): Promise<NavResult | undefined> {
-  const state = await readState();
+  const scope = options.scope ?? 'all';
+  const groupId = scope === 'group' ? (options.groupId ?? -1) : undefined;
+  const state = await readState(scope);
 
   // A "continuing" walk is one where we're still sitting on the tab we last
   // jumped to — then we keep the frozen snapshot and just move the cursor.
   let order: number[] = [];
   let cursor = 0;
-  if (currentId !== undefined && currentId === state.lastNavId) {
+  const sameGroup = scope !== 'group' || state.groupId === groupId;
+  if (currentId !== undefined && currentId === state.lastNavId && sameGroup) {
     order = await pruneOrder(state.order);
     const index = order.indexOf(currentId);
     cursor = index === -1 ? Math.min(state.cursor, Math.max(0, order.length - 1)) : index;
@@ -81,12 +103,18 @@ export async function navigateHistory(
   // Fresh walk (first press, or after a manual tab switch): rebuild the MRU
   // snapshot from Chrome's lastAccessed and anchor on the current tab.
   if (order.length === 0) {
-    order = await orderByLastAccessed();
-    cursor = currentId === undefined ? 0 : Math.max(0, order.indexOf(currentId));
+    order = await orderByLastAccessed(groupId);
+    if (currentId === undefined) {
+      cursor = 0;
+    } else {
+      const index = order.indexOf(currentId);
+      // Anchor before the MRU list when the active tab isn't navigable (e.g. new-tab page).
+      cursor = index === -1 ? -1 : index;
+    }
   }
 
   if (order.length === 0) {
-    await writeState({ order, cursor: 0, lastNavId: undefined });
+    await writeState(scope, { order, cursor: 0, lastNavId: undefined, groupId });
     return undefined;
   }
 
@@ -94,15 +122,25 @@ export async function navigateHistory(
 
   const target = order[cursor];
   if (target === undefined) return undefined;
-  await writeState({ order, cursor, lastNavId: target });
+  await writeState(scope, { order, cursor, lastNavId: target, groupId });
   return { targetId: target, order, cursor };
 }
 
+function isNavigableTab(tab: chrome.tabs.Tab): tab is chrome.tabs.Tab & { id: number } {
+  if (tab.id === undefined) return false;
+  const url = tab.url ?? tab.pendingUrl ?? '';
+  return !isNewTabUrl(url);
+}
+
 /** Open tabs sorted by `lastAccessed`, most recent first. */
-async function orderByLastAccessed(): Promise<number[]> {
+async function orderByLastAccessed(groupId?: number): Promise<number[]> {
   const tabs = await chrome.tabs.query({});
   return tabs
-    .filter((tab): tab is chrome.tabs.Tab & { id: number } => tab.id !== undefined)
+    .filter((tab): tab is chrome.tabs.Tab & { id: number } => {
+      if (!isNavigableTab(tab)) return false;
+      if (groupId === undefined) return true;
+      return (tab.groupId ?? -1) === groupId;
+    })
     .sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0))
     .map((tab) => tab.id);
 }
@@ -110,16 +148,11 @@ async function orderByLastAccessed(): Promise<number[]> {
 async function pruneOrder(order: number[]): Promise<number[]> {
   const alive: number[] = [];
   for (const id of order) {
-    if (await tabExists(id)) alive.push(id);
+    try {
+      if (isNavigableTab(await chrome.tabs.get(id))) alive.push(id);
+    } catch {
+      // Tab closed between snapshot and lookup — skip it.
+    }
   }
   return alive;
-}
-
-async function tabExists(id: number): Promise<boolean> {
-  try {
-    await chrome.tabs.get(id);
-    return true;
-  } catch {
-    return false;
-  }
 }
