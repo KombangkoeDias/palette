@@ -39,6 +39,14 @@ export interface Settings {
   toggleHotkey: Hotkey;
   /** In-page chord that opens the palette scoped to the current tab group. */
   toggleGroupHotkey: Hotkey;
+  /** Walk back through the MRU tab timeline across all tabs. */
+  backHotkey: Hotkey;
+  /** Walk forward through the MRU tab timeline across all tabs. */
+  forwardHotkey: Hotkey;
+  /** Walk back through the MRU tab timeline within the current tab group. */
+  groupBackHotkey: Hotkey;
+  /** Walk forward through the MRU tab timeline within the current tab group. */
+  groupForwardHotkey: Hotkey;
   /** Chords for actions while the palette is open. */
   keymap: Keymap;
   /** Auto-group tabs by domain and move new tabs into the matching window. */

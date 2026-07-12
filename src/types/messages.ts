@@ -24,7 +24,7 @@ export interface PaletteSnapshot {
 export type RpcRequest =
   | { type: 'GET_SNAPSHOT' }
   | { type: 'RUN_ACTION'; action: PaletteAction }
-  | { type: 'NAVIGATE_TAB_HISTORY'; direction: 'back' | 'forward'; scope: 'group' }
+  | { type: 'NAVIGATE_TAB_HISTORY'; direction: 'back' | 'forward'; scope: 'all' | 'group' }
   | { type: 'GET_TAB_GROUPS' }
   | { type: 'MOVE_CLUSTER_HERE'; cluster: TabClusterRef }
   | { type: 'FOCUS_CLUSTER'; cluster: TabClusterRef }

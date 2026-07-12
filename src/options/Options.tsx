@@ -44,11 +44,23 @@ export function Options(): ReactElement {
     setStatus('idle');
   }, []);
 
+  const updateNavigationHotkey = useCallback((field: keyof Pick<
+    Settings,
+    'backHotkey' | 'forwardHotkey' | 'groupBackHotkey' | 'groupForwardHotkey'
+  >, hotkey: Hotkey) => {
+    setSettings((prev) => ({ ...prev, [field]: hotkey }));
+    setStatus('idle');
+  }, []);
+
   const save = useCallback(() => {
     const toggleOk = isValidHotkey(settings.toggleHotkey, { requireModifier: true });
     const groupToggleOk = isValidHotkey(settings.toggleGroupHotkey, { requireModifier: true });
+    const backOk = isValidHotkey(settings.backHotkey, { requireModifier: true });
+    const forwardOk = isValidHotkey(settings.forwardHotkey, { requireModifier: true });
+    const groupBackOk = isValidHotkey(settings.groupBackHotkey, { requireModifier: true });
+    const groupForwardOk = isValidHotkey(settings.groupForwardHotkey, { requireModifier: true });
     const keysOk = PALETTE_ACTIONS.every((action) => isValidHotkey(settings.keymap[action.id]));
-    if (!toggleOk || !groupToggleOk || !keysOk) {
+    if (!toggleOk || !groupToggleOk || !backOk || !forwardOk || !groupBackOk || !groupForwardOk || !keysOk) {
       setStatus('invalid');
       return;
     }
@@ -128,6 +140,56 @@ export function Options(): ReactElement {
       </section>
 
       <section className="opt__card">
+        <p className="opt__help">
+          Walk the tab timeline without opening the palette. Needs a modifier so it can&apos;t fire
+          while typing. On restricted pages (e.g. <code>chrome://</code>) where the in-page
+          interceptor can&apos;t run, rebind the matching command at Chrome&apos;s shortcuts page.
+        </p>
+        <ul className="opt__list">
+          <li className="opt__list-row">
+            <span className="opt__list-label">Previous tab (all tabs)</span>
+            <HotkeyRecorder
+              value={settings.backHotkey}
+              onChange={(hotkey) => {
+                updateNavigationHotkey('backHotkey', hotkey);
+              }}
+              invalid={!isValidHotkey(settings.backHotkey, { requireModifier: true })}
+            />
+          </li>
+          <li className="opt__list-row">
+            <span className="opt__list-label">Next tab (all tabs)</span>
+            <HotkeyRecorder
+              value={settings.forwardHotkey}
+              onChange={(hotkey) => {
+                updateNavigationHotkey('forwardHotkey', hotkey);
+              }}
+              invalid={!isValidHotkey(settings.forwardHotkey, { requireModifier: true })}
+            />
+          </li>
+          <li className="opt__list-row">
+            <span className="opt__list-label">Previous tab (current group)</span>
+            <HotkeyRecorder
+              value={settings.groupBackHotkey}
+              onChange={(hotkey) => {
+                updateNavigationHotkey('groupBackHotkey', hotkey);
+              }}
+              invalid={!isValidHotkey(settings.groupBackHotkey, { requireModifier: true })}
+            />
+          </li>
+          <li className="opt__list-row">
+            <span className="opt__list-label">Next tab (current group)</span>
+            <HotkeyRecorder
+              value={settings.groupForwardHotkey}
+              onChange={(hotkey) => {
+                updateNavigationHotkey('groupForwardHotkey', hotkey);
+              }}
+              invalid={!isValidHotkey(settings.groupForwardHotkey, { requireModifier: true })}
+            />
+          </li>
+        </ul>
+      </section>
+
+      <section className="opt__card">
         <div className="opt__row">
           <div>
             <h2 className="opt__heading">Group tabs by domain</h2>
@@ -192,11 +254,11 @@ export function Options(): ReactElement {
       </div>
 
       <section className="opt__card opt__card--muted">
-        <h2 className="opt__heading">Browser-wide commands</h2>
+        <h2 className="opt__heading">Restricted pages</h2>
         <p className="opt__help">
-          The global toggle and the back/forward tab shortcuts (Cmd/Ctrl + , and Cmd/Ctrl + .) are
-          managed by Chrome and can&apos;t be changed here. They work even on pages where the
-          in-page shortcut can&apos;t run.
+          Palette shortcuts that run in the page (toggle, tab back/forward) can&apos;t intercept keys
+          on browser-internal pages. Use Chrome&apos;s extension shortcuts page to set fallbacks for
+          those commands.
         </p>
         <button type="button" className="opt__btn opt__btn--ghost" onClick={openBrowserShortcuts}>
           Open Chrome shortcuts

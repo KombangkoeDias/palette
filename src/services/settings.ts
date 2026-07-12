@@ -6,9 +6,9 @@ import { KEY_ACTIONS } from '../types/settings';
  * helpers to match, validate, and format hotkeys.
  *
  * The toggle hotkey drives the content script's in-page interceptor; the keymap
- * drives in-palette navigation. Both are fully customizable from the options
- * page (unlike the browser-wide `chrome.commands` shortcuts, which only Chrome's
- * own shortcuts page can change).
+ * drives in-palette navigation. Tab back/forward shortcuts are also intercepted
+ * in-page. Manifest `chrome.commands` remain as fallbacks on restricted pages
+ * and are rebindable at chrome://extensions/shortcuts.
  */
 
 const STORAGE_KEY = 'palette:settings';
@@ -37,6 +37,18 @@ export function defaultGroupHotkey(): Hotkey {
   return isMac()
     ? chord('j', { meta: true, shift: true })
     : chord('j', { ctrl: true, shift: true });
+}
+
+export function defaultBackHotkey(): Hotkey {
+  return isMac()
+    ? chord(',', { meta: true })
+    : chord(',', { ctrl: true });
+}
+
+export function defaultForwardHotkey(): Hotkey {
+  return isMac()
+    ? chord('.', { meta: true })
+    : chord('.', { ctrl: true });
 }
 
 /** Group-scoped MRU walk; handled in the content script (manifest command cap). */
@@ -68,6 +80,10 @@ export function defaultSettings(): Settings {
   return {
     toggleHotkey: defaultHotkey(),
     toggleGroupHotkey: defaultGroupHotkey(),
+    backHotkey: defaultBackHotkey(),
+    forwardHotkey: defaultForwardHotkey(),
+    groupBackHotkey: defaultGroupBackHotkey(),
+    groupForwardHotkey: defaultGroupForwardHotkey(),
     keymap: defaultKeymap(),
     groupByDomain: true,
     theme: 'dark',
@@ -175,6 +191,10 @@ function normalizeSettings(value: unknown): Settings {
   return {
     toggleHotkey: normalizeHotkey(record.toggleHotkey, defaultHotkey()),
     toggleGroupHotkey: normalizeHotkey(record.toggleGroupHotkey, defaultGroupHotkey()),
+    backHotkey: normalizeHotkey(record.backHotkey, defaultBackHotkey()),
+    forwardHotkey: normalizeHotkey(record.forwardHotkey, defaultForwardHotkey()),
+    groupBackHotkey: normalizeHotkey(record.groupBackHotkey, defaultGroupBackHotkey()),
+    groupForwardHotkey: normalizeHotkey(record.groupForwardHotkey, defaultGroupForwardHotkey()),
     keymap: normalizeKeymap(record.keymap),
     groupByDomain: record.groupByDomain !== false,
     theme: record.theme === 'light' ? 'light' : 'dark',

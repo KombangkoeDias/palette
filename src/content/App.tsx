@@ -7,8 +7,6 @@ import type { PaletteScope } from '../types/settings';
 import { useSettings } from '../hooks/useSettings';
 import { PALETTE_OPEN_ATTR } from './constants';
 import {
-  defaultGroupBackHotkey,
-  defaultGroupForwardHotkey,
   matchesHotkey,
 } from '../services/settings';
 
@@ -48,19 +46,32 @@ export function App(): React.ReactElement | null {
   const settings = useSettings();
   const hotkeyRef = useRef(settings.toggleHotkey);
   const groupHotkeyRef = useRef(settings.toggleGroupHotkey);
-  const groupBackHotkeyRef = useRef(defaultGroupBackHotkey());
-  const groupForwardHotkeyRef = useRef(defaultGroupForwardHotkey());
+  const backHotkeyRef = useRef(settings.backHotkey);
+  const forwardHotkeyRef = useRef(settings.forwardHotkey);
+  const groupBackHotkeyRef = useRef(settings.groupBackHotkey);
+  const groupForwardHotkeyRef = useRef(settings.groupForwardHotkey);
 
   useEffect(() => {
     hotkeyRef.current = settings.toggleHotkey;
     groupHotkeyRef.current = settings.toggleGroupHotkey;
-  }, [settings.toggleHotkey, settings.toggleGroupHotkey]);
+    backHotkeyRef.current = settings.backHotkey;
+    forwardHotkeyRef.current = settings.forwardHotkey;
+    groupBackHotkeyRef.current = settings.groupBackHotkey;
+    groupForwardHotkeyRef.current = settings.groupForwardHotkey;
+  }, [
+    settings.toggleHotkey,
+    settings.toggleGroupHotkey,
+    settings.backHotkey,
+    settings.forwardHotkey,
+    settings.groupBackHotkey,
+    settings.groupForwardHotkey,
+  ]);
 
-  const navigateGroupHistory = useCallback((direction: 'back' | 'forward') => {
+  const navigateHistory = useCallback((direction: 'back' | 'forward', scope: 'all' | 'group') => {
     void chrome.runtime.sendMessage({
       type: 'NAVIGATE_TAB_HISTORY',
       direction,
-      scope: 'group',
+      scope,
     });
   }, []);
 
@@ -161,16 +172,28 @@ export function App(): React.ReactElement | null {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
+      if (matchesHotkey(event, backHotkeyRef.current)) {
+        event.preventDefault();
+        event.stopPropagation();
+        navigateHistory('back', 'all');
+        return;
+      }
+      if (matchesHotkey(event, forwardHotkeyRef.current)) {
+        event.preventDefault();
+        event.stopPropagation();
+        navigateHistory('forward', 'all');
+        return;
+      }
       if (matchesHotkey(event, groupBackHotkeyRef.current)) {
         event.preventDefault();
         event.stopPropagation();
-        navigateGroupHistory('back');
+        navigateHistory('back', 'group');
         return;
       }
       if (matchesHotkey(event, groupForwardHotkeyRef.current)) {
         event.preventDefault();
         event.stopPropagation();
-        navigateGroupHistory('forward');
+        navigateHistory('forward', 'group');
         return;
       }
       if (matchesHotkey(event, groupHotkeyRef.current)) {
@@ -189,7 +212,7 @@ export function App(): React.ReactElement | null {
     return () => {
       window.removeEventListener('keydown', onKeyDown, { capture: true });
     };
-  }, [toggleAll, toggleGroup, navigateGroupHistory]);
+  }, [toggleAll, toggleGroup, navigateHistory]);
 
   const close = useCallback(() => {
     setPalette(CLOSED_PALETTE);
