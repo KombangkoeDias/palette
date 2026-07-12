@@ -48,6 +48,20 @@ function toPaletteTab(tab: chrome.tabs.Tab): PaletteTab | null {
   };
 }
 
+/** Projects the given tab ids into {@link PaletteTab}s, preserving order and skipping any that vanished. */
+export async function getTabsByIds(ids: readonly number[]): Promise<PaletteTab[]> {
+  const result: PaletteTab[] = [];
+  for (const id of ids) {
+    try {
+      const projected = toPaletteTab(await chrome.tabs.get(id));
+      if (projected) result.push(projected);
+    } catch {
+      // Tab closed between snapshot and lookup — skip it.
+    }
+  }
+  return result;
+}
+
 /** Returns every open tab across all normal windows. */
 export async function queryAllTabs(): Promise<PaletteTab[]> {
   const tabs = await chrome.tabs.query({});

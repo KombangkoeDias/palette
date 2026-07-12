@@ -32,13 +32,17 @@ export type RpcResponseFor<T extends RpcRequest['type']> = RpcResponseMap[T];
 
 /** One-way messages pushed from the background worker to content scripts. */
 export type BackgroundPush =
-  { type: 'TOGGLE_PALETTE' } | { type: 'SNAPSHOT_CHANGED'; snapshot: PaletteSnapshot };
+  | { type: 'TOGGLE_PALETTE' }
+  | { type: 'SNAPSHOT_CHANGED'; snapshot: PaletteSnapshot }
+  | { type: 'SHOW_TAB_SWITCHER'; tabs: PaletteTab[]; activeIndex: number };
 
 /** Type guard for narrowing untyped `chrome.runtime.onMessage` payloads. */
 export function isBackgroundPush(value: unknown): value is BackgroundPush {
   if (typeof value !== 'object' || value === null) return false;
   const type = (value as { type?: unknown }).type;
-  return type === 'TOGGLE_PALETTE' || type === 'SNAPSHOT_CHANGED';
+  return (
+    type === 'TOGGLE_PALETTE' || type === 'SNAPSHOT_CHANGED' || type === 'SHOW_TAB_SWITCHER'
+  );
 }
 
 /** Type guard for narrowing untyped RPC requests on the background side. */

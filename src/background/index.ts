@@ -1,7 +1,7 @@
 import { isRpcRequest } from '../types/messages';
 import type { BackgroundPush } from '../types/messages';
 import { buildSnapshot, handleRpc } from './rpc';
-import { activateTab } from './tabsService';
+import { activateTab, getTabsByIds } from './tabsService';
 import type { NavDirection } from './tabHistoryService';
 import { navigateHistory } from './tabHistoryService';
 
@@ -60,15 +60,28 @@ async function toggleActivePalette(): Promise<void> {
 
 async function navigate(direction: NavDirection): Promise<void> {
   const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  const targetId = await navigateHistory(direction, active?.id);
-  if (targetId === undefined || targetId === active?.id) return;
+  const result = await navigateHistory(direction, active?.id);
+  if (result === undefined || result.targetId === active?.id) return;
 
   try {
-    const tab = await chrome.tabs.get(targetId);
-    if (tab.id !== undefined) await activateTab(tab.id, tab.windowId);
+    const tab = await chrome.tabs.get(result.targetId);
+    if (tab.id === undefined) return;
+    await activateTab(tab.id, tab.windowId);
+    await showSwitcherHud(result.order, result.targetId);
   } catch {
     // Tab vanished between lookup and activation — nothing to do.
   }
+}
+
+/**
+ * Renders the quick-switch HUD on the tab we just landed on, so the user can
+ * see the MRU list they're walking and where they are in it.
+ */
+async function showSwitcherHud(order: number[], targetId: number): Promise<void> {
+  const tabs = await getTabsByIds(order);
+  const activeIndex = tabs.findIndex((tab) => tab.id === targetId);
+  if (activeIndex === -1) return;
+  await sendToTab(targetId, { type: 'SHOW_TAB_SWITCHER', tabs, activeIndex });
 }
 
 // --- Live snapshot broadcasting -------------------------------------------

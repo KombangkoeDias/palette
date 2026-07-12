@@ -1,12 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Palette } from '../components/Palette';
+import { TabSwitcher } from '../components/TabSwitcher';
 import { isBackgroundPush } from '../types/messages';
+import type { PaletteTab } from '../types/tab';
 import { useSettings } from '../hooks/useSettings';
 import { matchesHotkey } from '../services/settings';
 
 // If both the background command and the in-page interceptor react to the same
 // keypress, ignore the second toggle that lands within this window.
 const TOGGLE_DEBOUNCE_MS = 150;
+
+// How long the quick-switch HUD lingers after the last back/forward press.
+const SWITCHER_VISIBLE_MS = 1500;
+
+interface SwitcherState {
+  tabs: PaletteTab[];
+  activeIndex: number;
+}
 
 /**
  * Root content-script component.
@@ -18,6 +28,8 @@ const TOGGLE_DEBOUNCE_MS = 150;
  */
 export function App(): React.ReactElement | null {
   const [open, setOpen] = useState(false);
+  const [switcher, setSwitcher] = useState<SwitcherState | null>(null);
+  const switcherTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const lastToggleAt = useRef(0);
   const settings = useSettings();
   // Kept in a ref so the keydown listener always sees the latest hotkey without
@@ -36,19 +48,36 @@ export function App(): React.ReactElement | null {
     setOpen((prev) => !prev);
   }, []);
 
-  // Toggle from the background keyboard command (works browser-wide, e.g. even
-  // when focus is in the address bar).
+  // Show the quick-switch HUD, resetting its auto-hide timer on each press.
+  const showSwitcher = useCallback((next: SwitcherState) => {
+    setSwitcher(next);
+    if (switcherTimer.current !== undefined) clearTimeout(switcherTimer.current);
+    switcherTimer.current = setTimeout(() => {
+      setSwitcher(null);
+    }, SWITCHER_VISIBLE_MS);
+  }, []);
+
+  // Background pushes: toggle the palette, or show the back/forward HUD.
   useEffect(() => {
     const listener = (message: unknown): void => {
-      if (isBackgroundPush(message) && message.type === 'TOGGLE_PALETTE') {
-        toggle();
+      if (!isBackgroundPush(message)) return;
+      if (message.type === 'TOGGLE_PALETTE') toggle();
+      else if (message.type === 'SHOW_TAB_SWITCHER') {
+        showSwitcher({ tabs: message.tabs, activeIndex: message.activeIndex });
       }
     };
     chrome.runtime.onMessage.addListener(listener);
     return () => {
       chrome.runtime.onMessage.removeListener(listener);
     };
-  }, [toggle]);
+  }, [toggle, showSwitcher]);
+
+  useEffect(
+    () => () => {
+      if (switcherTimer.current !== undefined) clearTimeout(switcherTimer.current);
+    },
+    [],
+  );
 
   // In-page interceptor for the configured hotkey (default Cmd/Ctrl+J).
   //
@@ -73,6 +102,13 @@ export function App(): React.ReactElement | null {
     setOpen(false);
   }, []);
 
-  if (!open) return null;
-  return <Palette onClose={close} />;
+  if (!open && switcher === null) return null;
+  return (
+    <>
+      {switcher !== null ? (
+        <TabSwitcher tabs={switcher.tabs} activeIndex={switcher.activeIndex} />
+      ) : null}
+      {open ? <Palette onClose={close} /> : null}
+    </>
+  );
 }

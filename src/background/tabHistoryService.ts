@@ -23,6 +23,15 @@ const STORAGE_KEY = 'palette:tabHistory';
 
 export type NavDirection = 'back' | 'forward';
 
+export interface NavResult {
+  /** The tab to activate. */
+  targetId: number;
+  /** The frozen MRU snapshot being walked (index 0 = most recent). */
+  order: number[];
+  /** Position of the target within `order`. */
+  cursor: number;
+}
+
 interface HistoryState {
   /** Frozen MRU snapshot for the current walk (index 0 = most recent). */
   order: number[];
@@ -56,7 +65,7 @@ async function writeState(state: HistoryState): Promise<void> {
 export async function navigateHistory(
   direction: NavDirection,
   currentId: number | undefined,
-): Promise<number | undefined> {
+): Promise<NavResult | undefined> {
   const state = await readState();
 
   // A "continuing" walk is one where we're still sitting on the tab we last
@@ -84,8 +93,9 @@ export async function navigateHistory(
   cursor = direction === 'back' ? Math.min(cursor + 1, order.length - 1) : Math.max(cursor - 1, 0);
 
   const target = order[cursor];
+  if (target === undefined) return undefined;
   await writeState({ order, cursor, lastNavId: target });
-  return target;
+  return { targetId: target, order, cursor };
 }
 
 /** Open tabs sorted by `lastAccessed`, most recent first. */
