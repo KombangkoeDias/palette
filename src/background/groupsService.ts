@@ -77,9 +77,9 @@ function bestUrlByDomain(
     if (domain === '') continue;
     const prev = best.get(domain);
     if (
-      prev === undefined
-      || visit.count > prev.count
-      || (visit.count === prev.count && visit.lastAt > prev.lastAt)
+      prev === undefined ||
+      visit.count > prev.count ||
+      (visit.count === prev.count && visit.lastAt > prev.lastAt)
     ) {
       best.set(domain, visit);
     }
@@ -166,15 +166,17 @@ export async function listTabGroups(
     const groupTabs = tabsByGroup.get(group.id);
     if (groupTabs === undefined || groupTabs.length === 0) continue;
 
-    summaries.push(buildClusterSummary({
-      id: group.id,
-      kind: 'group',
-      title: group.title?.trim() || 'Untitled group',
-      color: group.color,
-      tabs: groupTabs,
-      currentWindowId,
-      faviconByTabId,
-    }));
+    summaries.push(
+      buildClusterSummary({
+        id: group.id,
+        kind: 'group',
+        title: group.title?.trim() || 'Untitled group',
+        color: group.color,
+        tabs: groupTabs,
+        currentWindowId,
+        faviconByTabId,
+      }),
+    );
   }
 
   const tabsByUngroupedDomain = new Map<string, chrome.tabs.Tab[]>();
@@ -188,16 +190,18 @@ export async function listTabGroups(
   }
 
   for (const [domain, domainTabs] of tabsByUngroupedDomain) {
-    summaries.push(buildClusterSummary({
-      id: domainClusterId(domain),
-      kind: 'domain',
-      domain,
-      title: domain,
-      color: colorForDomain(domain),
-      tabs: domainTabs,
-      currentWindowId,
-      faviconByTabId,
-    }));
+    summaries.push(
+      buildClusterSummary({
+        id: domainClusterId(domain),
+        kind: 'domain',
+        domain,
+        title: domain,
+        color: colorForDomain(domain),
+        tabs: domainTabs,
+        currentWindowId,
+        faviconByTabId,
+      }),
+    );
   }
 
   summaries.sort((a, b) => {
@@ -220,9 +224,7 @@ interface BuildClusterSummaryInput {
 }
 
 function buildClusterSummary(input: BuildClusterSummaryInput): TabGroupSummary {
-  const sorted = [...input.tabs].sort(
-    (a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0),
-  );
+  const sorted = [...input.tabs].sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0));
   const windowId = sorted[0]?.windowId ?? chrome.windows.WINDOW_ID_CURRENT;
   const leadTabId = sorted[0]?.id;
   const lastAccessedAt = sorted[0]?.lastAccessed ?? 0;
