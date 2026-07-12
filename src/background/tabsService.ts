@@ -1,0 +1,85 @@
+import type { PaletteTab } from '../types/tab';
+import { getHostname, isLocalHost } from '../utils/url';
+
+/**
+ * Background-only wrapper around the `chrome.tabs` / `chrome.windows` APIs.
+ *
+ * Everything here runs in the service worker. The UI never imports this module;
+ * it reaches these capabilities through the typed RPC layer instead.
+ */
+
+/**
+ * Drops favicons hosted on the local machine / private network.
+ *
+ * Loading such an `<img>` from a public page triggers Chrome's Local Network
+ * Access prompt, so we let those tabs fall back to the letter avatar instead.
+ * `data:` favicons are always safe (no network request).
+ */
+function safeFaviconUrl(favIconUrl: string | undefined): string | undefined {
+  if (favIconUrl === undefined || favIconUrl === '') return undefined;
+  if (favIconUrl.startsWith('data:')) return favIconUrl;
+  try {
+    return isLocalHost(new URL(favIconUrl).hostname) ? undefined : favIconUrl;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Projects a raw `chrome.tabs.Tab` into our serializable {@link PaletteTab}. */
+function toPaletteTab(tab: chrome.tabs.Tab): PaletteTab | null {
+  // Tabs without an id can't be activated, so they're useless to the palette.
+  if (tab.id === undefined || tab.id === chrome.tabs.TAB_ID_NONE) return null;
+
+  const url = tab.url ?? tab.pendingUrl ?? '';
+  return {
+    id: tab.id,
+    windowId: tab.windowId,
+    // `||` (not `??`) is intentional: empty/whitespace titles should fall
+    // through to the next best label.
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+    title: tab.title?.trim() || getHostname(url) || url || 'Untitled',
+    url,
+    hostname: getHostname(url),
+    favIconUrl: safeFaviconUrl(tab.favIconUrl),
+    pinned: tab.pinned,
+    audible: tab.audible ?? false,
+    muted: tab.mutedInfo?.muted ?? false,
+    lastAccessed: tab.lastAccessed ?? 0,
+  };
+}
+
+/** Returns every open tab across all normal windows. */
+export async function queryAllTabs(): Promise<PaletteTab[]> {
+  const tabs = await chrome.tabs.query({});
+  const result: PaletteTab[] = [];
+  for (const tab of tabs) {
+    const projected = toPaletteTab(tab);
+    if (projected) result.push(projected);
+  }
+  return result;
+}
+
+/**
+ * Activates a tab and focuses its window.
+ *
+ * If the tab lives in another Chrome window, that window is brought to the
+ * foreground so the switch is seamless across windows.
+ */
+export async function activateTab(tabId: number, windowId: number): Promise<void> {
+  await chrome.tabs.update(tabId, { active: true });
+  // Focusing may fail if the window was closed in a race; ignore that case.
+  try {
+    await chrome.windows.update(windowId, { focused: true });
+  } catch {
+    // Window no longer exists — nothing to focus.
+  }
+}
+
+/**
+ * Moves a tab into the target window (appending it at the end), then activates
+ * it there. Used to pull a tab from another window into the current one.
+ */
+export async function moveTabToWindow(tabId: number, windowId: number): Promise<void> {
+  await chrome.tabs.move(tabId, { windowId, index: -1 });
+  await activateTab(tabId, windowId);
+}
