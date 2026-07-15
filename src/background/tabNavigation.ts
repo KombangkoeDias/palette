@@ -1,6 +1,7 @@
 import type { BackgroundPush } from '../types/messages';
 import type { NavDirection, NavScope } from './tabHistoryService';
 import { navigateHistory } from './tabHistoryService';
+import { scheduleHudWalkCommit } from './hudMruCommit';
 import { activateTab, getTabsByIds } from './tabsService';
 
 /** Ignore duplicate back/forward triggers from manifest commands + content script. */
@@ -32,6 +33,8 @@ export async function performTabNavigation(
     const tab = await chrome.tabs.get(result.targetId);
     if (tab.id === undefined) return;
     await activateTab(tab.id, tab.windowId);
+    const url = tab.url ?? tab.pendingUrl ?? '';
+    if (url) scheduleHudWalkCommit(tab.id, url);
     await showSwitcherHud(result.order, result.targetId, sendToTab);
   } catch {
     // Tab vanished between lookup and activation — nothing to do.

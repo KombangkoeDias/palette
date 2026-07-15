@@ -2,9 +2,9 @@ import { getSettings } from '../services/settings';
 import { getHostname } from '../utils/url';
 
 /**
- * Domain-based tab grouping: when a tab navigates to a URL whose domain
- * already has open tabs elsewhere, move it into that domain's window and
- * place all matching tabs in a native Chrome tab group (labeled + colored).
+ * Domain-based tab grouping: when a tab navigates to an http(s) URL, place it in
+ * a native Chrome tab group labeled and colored by domain. When other tabs share
+ * the domain, consolidate into that domain's window first.
  */
 
 const TAB_GROUP_ID_NONE = -1;
@@ -111,21 +111,19 @@ async function isAlreadyGrouped(
   if (tab.groupId === TAB_GROUP_ID_NONE) return false;
   try {
     const group = await chrome.tabGroups.get(tab.groupId);
-    if (group.title !== domain) return false;
-    const sameDomain = await findSameDomainTabsInWindow(domain, targetWindowId);
-    if (sameDomain.length < 2) return false;
-    return sameDomain.every((t) => t.groupId === tab.groupId);
+    return group.title === domain;
   } catch {
     return false;
   }
 }
 
 async function ensureDomainGroup(domain: string, tabIds: number[]): Promise<void> {
-  if (tabIds.length < 2) return;
+  if (tabIds.length === 0) return;
 
-  const [first, ...rest] = tabIds;
+  const first = tabIds[0];
   if (first === undefined) return;
-  const idsTuple: [number, ...number[]] = [first, ...rest];
+  const idsTuple: [number, ...number[]] =
+    tabIds.length === 1 ? [first] : [first, ...tabIds.slice(1)];
 
   const tabs = await Promise.all(idsTuple.map((id) => chrome.tabs.get(id)));
   let existingGroupId: number | undefined;
@@ -152,8 +150,8 @@ function isTab(value: unknown): value is chrome.tabs.Tab {
 }
 
 /**
- * On navigation: if this tab's domain matches other open tabs, consolidate into
- * one window and ensure a native Chrome tab group.
+ * On navigation: place the tab in a native Chrome group for its domain. When
+ * other tabs share the domain, consolidate into that domain's window first.
  */
 export async function handleTabNavigation(tabId: number): Promise<void> {
   if (inFlight.has(tabId)) return;
@@ -170,9 +168,7 @@ export async function handleTabNavigation(tabId: number): Promise<void> {
     if (domain === '') return;
 
     const peers = await findSameDomainTabs(domain, tabId);
-    if (peers.length === 0) return;
-
-    const targetWindowId = pickTargetWindow(peers);
+    const targetWindowId = peers.length === 0 ? tab.windowId : pickTargetWindow(peers);
 
     if (await isAlreadyGrouped(tab, domain, targetWindowId)) return;
 
@@ -201,8 +197,6 @@ export async function handleTabNavigation(tabId: number): Promise<void> {
       tabIds.push(currentTab.id);
     }
 
-    if (tabIds.length < 2) return;
-
     await ensureDomainGroup(domain, tabIds);
 
     if (wasActive && currentTab.id !== undefined) {
@@ -220,8 +214,9 @@ export async function handleTabNavigation(tabId: number): Promise<void> {
   }
 }
 
-/** Ungroups any native tab group that was left with a single tab. */
+/** Ungroups accidental singletons; keeps intentional single-tab domain groups. */
 export async function cleanupSingletonGroups(): Promise<void> {
+  const settings = await getSettings();
   const tabs = await chrome.tabs.query({});
   const groupCounts = new Map<number, number>();
   for (const tab of tabs) {
@@ -234,12 +229,22 @@ export async function cleanupSingletonGroups(): Promise<void> {
     if (count !== 1) continue;
     const grouped = await chrome.tabs.query({ groupId });
     const lone = grouped[0];
-    if (lone?.id !== undefined) {
+    if (lone?.id === undefined) continue;
+
+    if (settings.groupByDomain && isGroupableTab(lone)) {
+      const domain = tabDomain(lone);
       try {
-        await chrome.tabs.ungroup(lone.id);
+        const group = await chrome.tabGroups.get(groupId);
+        if (group.title === domain) continue;
       } catch {
-        // Group may have changed — ignore.
+        // Group may have changed — fall through to ungroup.
       }
+    }
+
+    try {
+      await chrome.tabs.ungroup(lone.id);
+    } catch {
+      // Group may have changed — ignore.
     }
   }
 }

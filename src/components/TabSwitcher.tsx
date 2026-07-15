@@ -21,7 +21,7 @@ export function TabSwitcher({ tabs, activeIndex }: TabSwitcherProps): ReactEleme
   }, [activeIndex]);
 
   return (
-    <div className="pal-switcher" role="status" aria-live="polite">
+    <div className="pal-switcher pal-glass-surface" role="status" aria-live="polite">
       <ul className="pal-switcher__list" ref={listRef}>
         {tabs.map((tab, index) => (
           <li

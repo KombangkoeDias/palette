@@ -7,19 +7,23 @@
  * - `Cmd+<` (back) steps to progressively older tabs.
  * - `Cmd+>` (forward) steps back toward the most recent tab.
  *
- * The source of truth for "how recent" is Chrome's own `tab.lastAccessed`. On a
- * *fresh* navigation (the first press, or any press after you manually switched
- * tabs) we rebuild the MRU snapshot from `lastAccessed`, so the first `Cmd+<`
- * always lands on the tab you were just on. While you keep pressing (a
- * *continuing* walk) we reuse that frozen snapshot and only move the cursor —
- * otherwise our own programmatic activations would reshuffle `lastAccessed` and
- * corrupt the timeline.
+ * The source of truth for "how recent" is the persisted URL MRU list (genuine
+ * visits only — HUD fly-by previews do not reorder it). Chrome's `lastAccessed`
+ * breaks ties for duplicate URLs and tabs missing from MRU. On a *fresh*
+ * navigation (the first press, or any press after you manually switched tabs) we
+ * rebuild the snapshot from MRU. While you keep pressing (a *continuing* walk)
+ * we reuse that frozen snapshot and only move the cursor — otherwise our own
+ * programmatic activations would corrupt the timeline mid-walk. After the HUD
+ * settles and MRU commits, the frozen snapshot is cleared so the next walk
+ * rebuilds from the updated MRU even if you stayed on the same tab.
  *
  * State lives in `chrome.storage.session` so it survives service-worker restarts
  * within a session but resets when the browser closes.
  */
 
+import { getMru } from './mruService';
 import { isNewTabUrl } from '../utils/url';
+import { sortByMruRecency } from '../utils/mruOrder';
 
 const GLOBAL_STORAGE_KEY = 'palette:tabHistory';
 const GROUP_STORAGE_KEY = 'palette:tabHistoryGroup';
@@ -76,6 +80,16 @@ async function writeState(scope: NavScope, state: HistoryState): Promise<void> {
   await chrome.storage.session.set({ [storageKey(scope)]: state });
 }
 
+/** Clears frozen walk snapshots so the next navigation rebuilds from MRU. */
+export async function resetWalkState(scope?: NavScope): Promise<void> {
+  const scopes: NavScope[] = scope === undefined ? ['all', 'group'] : [scope];
+  await Promise.all(
+    scopes.map((entry) =>
+      writeState(entry, { order: [], cursor: 0, lastNavId: undefined, groupId: undefined }),
+    ),
+  );
+}
+
 /**
  * Steps `back` (older) or `forward` (more recent) through the tab timeline and
  * returns the tab id to activate, or `undefined` if there's nowhere to go.
@@ -101,9 +115,9 @@ export async function navigateHistory(
   }
 
   // Fresh walk (first press, or after a manual tab switch): rebuild the MRU
-  // snapshot from Chrome's lastAccessed and anchor on the current tab.
+  // snapshot from the persisted URL list and anchor on the current tab.
   if (order.length === 0) {
-    order = await orderByLastAccessed(groupId);
+    order = await orderByMru(groupId);
     if (currentId === undefined) {
       cursor = 0;
     } else {
@@ -132,17 +146,28 @@ function isNavigableTab(tab: chrome.tabs.Tab): tab is chrome.tabs.Tab & { id: nu
   return !isNewTabUrl(url);
 }
 
-/** Open tabs sorted by `lastAccessed`, most recent first. */
-async function orderByLastAccessed(groupId?: number): Promise<number[]> {
-  const tabs = await chrome.tabs.query({});
-  return tabs
+interface MruSortableTab {
+  id: number;
+  url: string;
+  lastAccessed: number;
+}
+
+/** Open tabs sorted by persisted MRU, most recent first. */
+async function orderByMru(groupId?: number): Promise<number[]> {
+  const [rawTabs, mru] = await Promise.all([chrome.tabs.query({}), getMru()]);
+  const tabs: MruSortableTab[] = rawTabs
     .filter((tab): tab is chrome.tabs.Tab & { id: number } => {
       if (!isNavigableTab(tab)) return false;
       if (groupId === undefined) return true;
-      return (tab.groupId ?? -1) === groupId;
+      return tab.groupId === groupId;
     })
-    .sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0))
-    .map((tab) => tab.id);
+    .map((tab) => ({
+      id: tab.id,
+      url: tab.url ?? tab.pendingUrl ?? '',
+      lastAccessed: tab.lastAccessed ?? 0,
+    }));
+
+  return sortByMruRecency(tabs, mru).map((tab) => tab.id);
 }
 
 async function pruneOrder(order: number[]): Promise<number[]> {

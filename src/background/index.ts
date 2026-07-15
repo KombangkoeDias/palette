@@ -1,10 +1,12 @@
 import { isRpcRequest } from '../types/messages';
-import { buildSnapshot, handleRpc } from './rpc';
+import { handleRpc } from './rpc';
 import { cleanupSingletonGroups, handleTabNavigation } from './groupingService';
-import { recordUrl } from './mruService';
+import { handleTabActivatedMru } from './hudMruCommit';
 import { sendToTab } from './pushMessaging';
 import { performTabNavigation } from './tabNavigation';
 import { registerOmnibox } from './omniboxService';
+import { registerNewTabDeduper } from './newTabService';
+import { scheduleSnapshotBroadcast } from './snapshotBroadcast';
 
 /**
  * Palette background service worker.
@@ -23,9 +25,9 @@ const TOGGLE_COMMAND = 'toggle-palette';
 const TOGGLE_GROUP_COMMAND = 'toggle-palette-group';
 const PREVIOUS_TAB_COMMAND = 'previous-tab';
 const NEXT_TAB_COMMAND = 'next-tab';
-const BROADCAST_DEBOUNCE_MS = 150;
 
 registerOmnibox();
+registerNewTabDeduper();
 
 // --- RPC: UI -> background -------------------------------------------------
 
@@ -71,50 +73,28 @@ async function toggleActivePalette(scope: 'all' | 'group' = 'all'): Promise<void
 
 // --- Live snapshot broadcasting -------------------------------------------
 
-let broadcastTimer: ReturnType<typeof setTimeout> | undefined;
-
-/** Coalesces bursts of tab events into a single broadcast. */
-function scheduleBroadcast(): void {
-  if (broadcastTimer !== undefined) clearTimeout(broadcastTimer);
-  broadcastTimer = setTimeout(() => {
-    broadcastTimer = undefined;
-    void broadcastSnapshot();
-  }, BROADCAST_DEBOUNCE_MS);
-}
-
-async function broadcastSnapshot(): Promise<void> {
-  const tabs = await chrome.tabs.query({});
-  await Promise.all(
-    tabs.map(async (tab) => {
-      if (tab.id === undefined) return;
-      const snapshot = await buildSnapshot(tab.id);
-      await sendToTab(tab.id, { type: 'SNAPSHOT_CHANGED', snapshot });
-    }),
-  );
-}
-
 // Any change to the tab set or relevant tab metadata triggers a rebroadcast.
-chrome.tabs.onCreated.addListener(scheduleBroadcast);
+chrome.tabs.onCreated.addListener(scheduleSnapshotBroadcast);
 chrome.tabs.onActivated.addListener((activeInfo) => {
   void chrome.tabs
     .get(activeInfo.tabId)
     .then((tab) => {
       const url = tab.url ?? tab.pendingUrl ?? '';
-      return recordUrl(url);
+      handleTabActivatedMru(activeInfo.tabId, url);
     })
     .catch(() => undefined);
 });
 chrome.tabs.onRemoved.addListener(() => {
-  scheduleBroadcast();
+  scheduleSnapshotBroadcast();
   void cleanupSingletonGroups();
 });
-chrome.tabs.onMoved.addListener(scheduleBroadcast);
-chrome.tabs.onAttached.addListener(scheduleBroadcast);
+chrome.tabs.onMoved.addListener(scheduleSnapshotBroadcast);
+chrome.tabs.onAttached.addListener(scheduleSnapshotBroadcast);
 chrome.tabs.onDetached.addListener(() => {
-  scheduleBroadcast();
+  scheduleSnapshotBroadcast();
   void cleanupSingletonGroups();
 });
-chrome.tabGroups.onUpdated.addListener(scheduleBroadcast);
+chrome.tabGroups.onUpdated.addListener(scheduleSnapshotBroadcast);
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.url !== undefined) {
     void handleTabNavigation(tabId);
@@ -130,6 +110,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     changeInfo.pinned !== undefined ||
     changeInfo.status === 'complete'
   ) {
-    scheduleBroadcast();
+    scheduleSnapshotBroadcast();
   }
 });

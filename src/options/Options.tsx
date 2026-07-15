@@ -194,9 +194,9 @@ export function Options(): ReactElement {
           <div>
             <h2 className="opt__heading">Group tabs by domain</h2>
             <p className="opt__help">
-              When a tab navigates to a domain that already has open tabs, move it into that
-              domain&apos;s window and place matching tabs in a native Chrome tab group (labeled and
-              colored by domain).
+              When a tab navigates to a site, place it in a native Chrome tab group labeled and
+              colored by domain. If other tabs share the domain, move it into that domain&apos;s
+              window and group them together.
             </p>
           </div>
           <label className="opt__toggle">

@@ -14,8 +14,7 @@ import {
 // keypress, ignore the second toggle that lands within this window.
 const TOGGLE_DEBOUNCE_MS = 150;
 
-// How long the quick-switch HUD lingers after the last back/forward press.
-const SWITCHER_VISIBLE_MS = 1500;
+import { HUD_SETTLE_MS } from '../constants/hud';
 
 interface SwitcherState {
   tabs: PaletteTab[];
@@ -138,7 +137,7 @@ export function App(): React.ReactElement | null {
     if (switcherTimer.current !== undefined) clearTimeout(switcherTimer.current);
     switcherTimer.current = setTimeout(() => {
       setSwitcher(null);
-    }, SWITCHER_VISIBLE_MS);
+    }, HUD_SETTLE_MS);
   }, []);
 
   useEffect(() => {

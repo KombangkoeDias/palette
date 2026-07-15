@@ -1,5 +1,6 @@
 import Fuse, { type IFuseOptions } from 'fuse.js';
 import type { PaletteTab } from '../types/tab';
+import { buildMruRank, sortByMruRecency } from '../utils/mruOrder';
 
 /**
  * Fuzzy search + intelligent ranking over open tabs.
@@ -44,9 +45,8 @@ export function createTabFuse(tabs: readonly PaletteTab[]): Fuse<PaletteTab> {
 /**
  * Returns tabs ranked for the given query.
  *
- * An empty query returns all tabs ordered by real recency — Chrome's own
- * `lastAccessed` timestamp, most recent first — which powers the default
- * "recent tabs" view.
+ * An empty query returns all tabs ordered by persisted MRU (genuine recency),
+ * with Chrome's `lastAccessed` as a tiebreaker — the default "recent tabs" view.
  */
 export function searchTabs(
   query: string,
@@ -100,23 +100,7 @@ function adjustScore(
 }
 
 function orderByRecency(tabs: readonly PaletteTab[], mru: readonly string[]): ScoredTab[] {
-  const mruRank = buildMruRank(mru);
-  // Sort by Chrome's lastAccessed (most recent first); fall back to the palette
-  // MRU and then natural order for tabs that share a timestamp.
-  const ordered = [...tabs].sort((a, b) => {
-    if (b.lastAccessed !== a.lastAccessed) return b.lastAccessed - a.lastAccessed;
-    const ra = mruRank.get(a.url) ?? Number.POSITIVE_INFINITY;
-    const rb = mruRank.get(b.url) ?? Number.POSITIVE_INFINITY;
-    return ra - rb;
-  });
+  const ordered = sortByMruRecency(tabs, mru);
   // Score by final position so the global registry sort preserves this order.
   return ordered.map<ScoredTab>((tab, index) => ({ tab, score: index }));
-}
-
-function buildMruRank(mru: readonly string[]): Map<string, number> {
-  const rank = new Map<string, number>();
-  mru.forEach((url, index) => {
-    if (!rank.has(url)) rank.set(url, index);
-  });
-  return rank;
 }

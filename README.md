@@ -18,7 +18,7 @@ The MVP does exactly one thing — switch tabs — but it's built on an extensib
 
 - **Instant tab switching** with fuzzy search over title, hostname, and full URL (powered by [Fuse.js](https://www.fusejs.io/)).
 - **Intelligent ranking**: exact > prefix > fuzzy, with a recency nudge for tabs you use often.
-- **Recent-first default**: with an empty query, tabs are ordered by real recency (Chrome's own `lastAccessed`), most recent first.
+- **Recent-first default**: with an empty query, tabs are ordered by genuine recency (persisted MRU from real visits), most recent first.
 - **Hides the current tab**: the tab you're already on is left out of the list, so the top result is the tab you were last on — Enter jumps straight there.
 - **Fully keyboard driven**: Arrow keys, Home/End, Enter, Esc — plus mouse click and hover.
 - **Cross-window**: switching to a tab in another window brings that window to the front.
@@ -26,10 +26,10 @@ The MVP does exactly one thing — switch tabs — but it's built on an extensib
 - **Fully configurable keys**: set the open shortcut _and_ every in-palette key (navigate, switch, move-here, close) from the settings page (click the toolbar icon), synced via `chrome.storage.sync`.
 - **Back/forward through tabs**: **Cmd + ,** goes back to older tabs and **Cmd + .** goes forward (**Ctrl + ,** / **Ctrl + .** on Windows/Linux) — browser-style history navigation over your tab focus order, without opening the palette. A quick-switch HUD shows the timeline while you walk it.
 - **Back/forward within the current group**: **Cmd + Shift + ,** / **Cmd + Shift + .** (**Ctrl + Shift + ,** / **Ctrl + Shift + .** on Windows/Linux) — same MRU walk, but only among tabs in the current native tab group. Intercepted by the content script (Chrome limits extensions to four manifest shortcuts).
-- **Domain tab grouping**: when a tab navigates to a domain that already has open tabs, it moves into that domain's window and all matching tabs are placed in a native Chrome tab group (labeled and colored by domain). Toggle in settings.
+- **Domain tab grouping**: when a tab navigates to a site, it is placed in a native Chrome tab group labeled and colored by domain. If other tabs share the domain, they consolidate into that domain's window. Toggle in settings.
 - **Group-aware palette**: tabs in native Chrome groups show a colored stripe and group label in the search panel.
 - **Search within current group**: **Cmd + Shift + J** (**Ctrl + Shift + J** on Windows/Linux) opens the palette filtered to tabs in the current tab group only.
-- **New tab tab manager**: opening a new tab shows a random scenic wallpaper from a curated set of 100 Unsplash landscapes, with a frosted-glass panel — **Frequent sites** (most-visited domains from your browsing history, grouped or not, 2×5 grid with favicons) above **Open tabs** (native tab groups plus ungrouped tabs clustered by domain, with search, **Move here**, and **Go to** on each card). Type **`grp` + Space** in the address bar (on new tab or anywhere) to fuzzy-search open tabs and jump straight to one.
+- **New tab tab manager**: opening a new tab shows a random scenic wallpaper from a curated set of 100 Unsplash landscapes, with a frosted-glass panel — **Frequent sites** (most-visited domains from your browsing history, grouped or not, 2×5 grid with favicons) above **Open tabs** (native tab groups plus ungrouped tabs clustered by domain, with search, **Move here**, and **Go to** on each card). If a new-tab page is already open in the same window, **Cmd + T** opens a fresh one and closes the old new-tab page in that window (one new-tab page per window). Type **`grp` + Space** in the address bar (on new tab or anywhere) to fuzzy-search open tabs and jump straight to one.
 - **Polished UI**: dark theme, rounded corners, soft shadow, blurred backdrop, and fade animations — rendered in a Shadow DOM so no page styles leak in or out.
 - **Fast at scale**: the search index is rebuilt only when your tabs change, and rows are memoized, so it stays responsive with hundreds of tabs.
 

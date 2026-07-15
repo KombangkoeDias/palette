@@ -1,7 +1,9 @@
 import type { PaletteSnapshot, RpcRequest, RpcResponseMap } from '../types/messages';
 import type { PaletteAction } from '../commands/types';
 import { activateTab, moveTabToWindow, queryAllTabs } from './tabsService';
-import { getMru, recordUrl } from './mruService';
+import { getMru } from './mruService';
+import { cancelHudWalkCommit } from './hudMruCommit';
+import { recordGenuineVisit } from './mruRecording';
 import { sendToTab } from './pushMessaging';
 import { performTabNavigation } from './tabNavigation';
 import {
@@ -104,6 +106,8 @@ async function runAction(
   action: PaletteAction,
   senderWindowId: number | undefined,
 ): Promise<{ ok: true }> {
+  cancelHudWalkCommit();
+
   // Resolve the URL first so MRU stays accurate even if the tab later closes.
   const url = await getActiveActionUrl(action.tabId);
 
@@ -120,7 +124,8 @@ async function runAction(
       return assertNever(action);
   }
 
-  if (url) await recordUrl(url);
+  // Tab activation MRU is recorded by `onActivated`; moves don't activate the tab.
+  if (action.type === 'MOVE_TAB_TO_CURRENT_WINDOW' && url) await recordGenuineVisit(url);
   return { ok: true };
 }
 
