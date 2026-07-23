@@ -2,7 +2,7 @@ import type { PaletteSnapshot, RpcRequest, RpcResponseMap } from '../types/messa
 import type { PaletteAction } from '../commands/types';
 import { activateTab, moveTabToWindow, queryAllTabs } from './tabsService';
 import { getMru } from './mruService';
-import { cancelHudWalkCommit } from './hudMruCommit';
+import { commitHudWalkNow, getPendingHudTabId } from './hudMruCommit';
 import { recordGenuineVisit } from './mruRecording';
 import { sendToTab } from './pushMessaging';
 import { performTabNavigation } from './tabNavigation';
@@ -61,8 +61,22 @@ export async function handleRpc(
       return runAction(request.action, senderWindowId);
 
     case 'NAVIGATE_TAB_HISTORY':
-      await performTabNavigation(request.direction, request.scope, sendToTab);
+      await performTabNavigation(request.direction, request.scope, sendToTab, request.modifiers);
       return { ok: true };
+
+    case 'COMMIT_HUD_WALK': {
+      const hudTabId = getPendingHudTabId() ?? senderTabId;
+      await commitHudWalkNow();
+      const dismissTargets = new Set<number>();
+      if (hudTabId !== undefined) dismissTargets.add(hudTabId);
+      if (senderTabId !== undefined) dismissTargets.add(senderTabId);
+      const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      if (active?.id !== undefined) dismissTargets.add(active.id);
+      await Promise.all(
+        [...dismissTargets].map((tabId) => sendToTab(tabId, { type: 'DISMISS_HUD' })),
+      );
+      return { ok: true };
+    }
 
     case 'GET_TAB_GROUPS':
       return listTabGroups(senderWindowId);
@@ -106,7 +120,11 @@ async function runAction(
   action: PaletteAction,
   senderWindowId: number | undefined,
 ): Promise<{ ok: true }> {
-  cancelHudWalkCommit();
+  const hudTabId = getPendingHudTabId();
+  if (hudTabId !== undefined) {
+    await commitHudWalkNow();
+    void sendToTab(hudTabId, { type: 'DISMISS_HUD' });
+  }
 
   // Resolve the URL first so MRU stays accurate even if the tab later closes.
   const url = await getActiveActionUrl(action.tabId);

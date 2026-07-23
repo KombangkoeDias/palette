@@ -128,6 +128,48 @@ export function matchesHotkey(event: KeyboardEvent, hotkey: Hotkey): boolean {
   );
 }
 
+/** Modifier keys held for a chord — captured when a HUD walk begins. */
+export interface ChordModifiers {
+  ctrl: boolean;
+  meta: boolean;
+  alt: boolean;
+  shift: boolean;
+}
+
+export function modifiersFromEvent(event: KeyboardEvent): ChordModifiers {
+  return {
+    ctrl: event.ctrlKey,
+    meta: event.metaKey,
+    alt: event.altKey,
+    shift: event.shiftKey,
+  };
+}
+
+const MODIFIER_KEY_NAMES = new Set(['Control', 'Meta', 'Alt', 'Shift', 'OS']);
+
+/** True when `event.key` is a modifier key (not comma/period/etc.). */
+export function isModifierKey(key: string): boolean {
+  return MODIFIER_KEY_NAMES.has(key);
+}
+
+export function modifiersFromHotkey(hotkey: Hotkey): ChordModifiers {
+  return {
+    ctrl: hotkey.ctrl,
+    meta: hotkey.meta,
+    alt: hotkey.alt,
+    shift: hotkey.shift,
+  };
+}
+
+/** True while every modifier from the walk's opening chord is still held. */
+export function allWalkModifiersHeld(required: ChordModifiers, event: KeyboardEvent): boolean {
+  if (required.ctrl && !event.getModifierState('Control')) return false;
+  if (required.meta && !event.getModifierState('Meta')) return false;
+  if (required.alt && !event.getModifierState('Alt')) return false;
+  if (required.shift && !event.getModifierState('Shift')) return false;
+  return true;
+}
+
 interface ValidateOptions {
   /** Require a Ctrl/Alt/Cmd modifier (used for the page-global toggle). */
   requireModifier?: boolean;

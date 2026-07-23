@@ -6,15 +6,19 @@ import type { PaletteTab } from '../types/tab';
 import type { PaletteScope } from '../types/settings';
 import { useSettings } from '../hooks/useSettings';
 import { PALETTE_OPEN_ATTR } from './constants';
+import { HUD_DISMISS_MESSAGE, HUD_WALK_SESSION_KEY } from '../constants/hudWalk';
+import { sendRpc } from '../services/messaging';
 import {
+  allWalkModifiersHeld,
   matchesHotkey,
+  modifiersFromEvent,
+  modifiersFromHotkey,
+  type ChordModifiers,
 } from '../services/settings';
 
 // If both the background command and the in-page interceptor react to the same
 // keypress, ignore the second toggle that lands within this window.
 const TOGGLE_DEBOUNCE_MS = 150;
-
-import { HUD_SETTLE_MS } from '../constants/hud';
 
 interface SwitcherState {
   tabs: PaletteTab[];
@@ -40,8 +44,12 @@ const CLOSED_PALETTE: PaletteState = { open: false, scope: 'all' };
 export function App(): React.ReactElement | null {
   const [palette, setPalette] = useState<PaletteState>(CLOSED_PALETTE);
   const [switcher, setSwitcher] = useState<SwitcherState | null>(null);
-  const switcherTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const lastToggleAt = useRef(0);
+  /** Modifiers held when the current HUD walk chord started (from settings). */
+  const walkModifiersRef = useRef<ChordModifiers | null>(null);
+  const switcherVisibleRef = useRef(false);
+  const currentWalkTokenRef = useRef(0);
+  const dismissedWalkTokenRef = useRef(0);
   const settings = useSettings();
   const hotkeyRef = useRef(settings.toggleHotkey);
   const groupHotkeyRef = useRef(settings.toggleGroupHotkey);
@@ -66,13 +74,59 @@ export function App(): React.ReactElement | null {
     settings.groupForwardHotkey,
   ]);
 
-  const navigateHistory = useCallback((direction: 'back' | 'forward', scope: 'all' | 'group') => {
-    void chrome.runtime.sendMessage({
-      type: 'NAVIGATE_TAB_HISTORY',
-      direction,
-      scope,
-    });
+  useEffect(() => {
+    switcherVisibleRef.current = switcher !== null;
+  }, [switcher]);
+
+  const dismissSwitcher = useCallback(() => {
+    dismissedWalkTokenRef.current = currentWalkTokenRef.current;
+    switcherVisibleRef.current = false;
+    setSwitcher(null);
+    walkModifiersRef.current = null;
   }, []);
+
+  const finishHudWalk = useCallback(() => {
+    if (!switcherVisibleRef.current) return;
+    dismissSwitcher();
+    void sendRpc({ type: 'COMMIT_HUD_WALK' });
+  }, [dismissSwitcher]);
+
+  const dismissHudFromExternalSignal = useCallback(() => {
+    if (!switcherVisibleRef.current) return;
+    dismissSwitcher();
+  }, [dismissSwitcher]);
+
+  const endHudWalkIfModifiersReleased = useCallback(
+    (event: KeyboardEvent) => {
+      const walkModifiers = walkModifiersRef.current;
+      if (walkModifiers === null || !switcherVisibleRef.current) return;
+      if (allWalkModifiersHeld(walkModifiers, event)) return;
+      finishHudWalk();
+    },
+    [finishHudWalk],
+  );
+
+  const matchesNavHotkey = useCallback((event: KeyboardEvent): boolean => {
+    return (
+      matchesHotkey(event, backHotkeyRef.current) ||
+      matchesHotkey(event, forwardHotkeyRef.current) ||
+      matchesHotkey(event, groupBackHotkeyRef.current) ||
+      matchesHotkey(event, groupForwardHotkeyRef.current)
+    );
+  }, []);
+
+  const navigateHistory = useCallback(
+    (direction: 'back' | 'forward', scope: 'all' | 'group', event: KeyboardEvent) => {
+      walkModifiersRef.current = modifiersFromEvent(event);
+      void chrome.runtime.sendMessage({
+        type: 'NAVIGATE_TAB_HISTORY',
+        direction,
+        scope,
+        modifiers: walkModifiersRef.current,
+      });
+    },
+    [],
+  );
 
   const openPalette = useCallback((scope: PaletteScope, groupId?: number) => {
     const now = Date.now();
@@ -132,12 +186,14 @@ export function App(): React.ReactElement | null {
     });
   }, [openPalette, applyGroupFilter]);
 
-  const showSwitcher = useCallback((next: SwitcherState) => {
+  const showSwitcher = useCallback((next: SwitcherState, walkToken: number) => {
+    if (walkToken <= dismissedWalkTokenRef.current) return;
+    currentWalkTokenRef.current = walkToken;
+    if (walkModifiersRef.current === null) {
+      walkModifiersRef.current = modifiersFromHotkey(backHotkeyRef.current);
+    }
+    switcherVisibleRef.current = true;
     setSwitcher(next);
-    if (switcherTimer.current !== undefined) clearTimeout(switcherTimer.current);
-    switcherTimer.current = setTimeout(() => {
-      setSwitcher(null);
-    }, HUD_SETTLE_MS);
   }, []);
 
   useEffect(() => {
@@ -147,21 +203,47 @@ export function App(): React.ReactElement | null {
         if (message.scope === 'group') openPalette('group', message.groupId);
         else openPalette('all');
       } else if (message.type === 'SHOW_TAB_SWITCHER') {
-        showSwitcher({ tabs: message.tabs, activeIndex: message.activeIndex });
+        showSwitcher(
+          { tabs: message.tabs, activeIndex: message.activeIndex },
+          message.walkToken,
+        );
+      } else if (message.type === 'DISMISS_HUD') {
+        dismissSwitcher();
       }
     };
     chrome.runtime.onMessage.addListener(listener);
     return () => {
       chrome.runtime.onMessage.removeListener(listener);
     };
-  }, [openPalette, showSwitcher]);
+  }, [openPalette, showSwitcher, dismissSwitcher]);
 
-  useEffect(
-    () => () => {
-      if (switcherTimer.current !== undefined) clearTimeout(switcherTimer.current);
-    },
-    [],
-  );
+  // Notion/Brex commit MRU from iframe hudKeyboard; the top frame may never see
+  // Meta keyup or DISMISS_HUD. Closing when the background clears walk session
+  // keeps the overlay in sync regardless of which frame ended the walk.
+  useEffect(() => {
+    const onSessionChange = (changes: Record<string, chrome.storage.StorageChange>): void => {
+      if (changes[HUD_WALK_SESSION_KEY] === undefined) return;
+      if (changes[HUD_WALK_SESSION_KEY].newValue === undefined && switcherVisibleRef.current) {
+        dismissSwitcher();
+      }
+    };
+    chrome.storage.session.onChanged.addListener(onSessionChange);
+    return () => {
+      chrome.storage.session.onChanged.removeListener(onSessionChange);
+    };
+  }, [dismissSwitcher]);
+
+  // Iframes (Notion editors, etc.) post this when they detect modifier release.
+  useEffect(() => {
+    const onMessage = (event: MessageEvent): void => {
+      if (event.data?.type !== HUD_DISMISS_MESSAGE) return;
+      dismissHudFromExternalSignal();
+    };
+    window.addEventListener('message', onMessage);
+    return () => {
+      window.removeEventListener('message', onMessage);
+    };
+  }, [dismissHudFromExternalSignal]);
 
   useEffect(() => {
     if (palette.open) document.documentElement.setAttribute(PALETTE_OPEN_ATTR, '');
@@ -171,30 +253,22 @@ export function App(): React.ReactElement | null {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (matchesHotkey(event, backHotkeyRef.current)) {
+      if (matchesNavHotkey(event)) {
+        if (event.repeat) return;
         event.preventDefault();
         event.stopPropagation();
-        navigateHistory('back', 'all');
+        if (matchesHotkey(event, backHotkeyRef.current)) {
+          navigateHistory('back', 'all', event);
+        } else if (matchesHotkey(event, forwardHotkeyRef.current)) {
+          navigateHistory('forward', 'all', event);
+        } else if (matchesHotkey(event, groupBackHotkeyRef.current)) {
+          navigateHistory('back', 'group', event);
+        } else {
+          navigateHistory('forward', 'group', event);
+        }
         return;
       }
-      if (matchesHotkey(event, forwardHotkeyRef.current)) {
-        event.preventDefault();
-        event.stopPropagation();
-        navigateHistory('forward', 'all');
-        return;
-      }
-      if (matchesHotkey(event, groupBackHotkeyRef.current)) {
-        event.preventDefault();
-        event.stopPropagation();
-        navigateHistory('back', 'group');
-        return;
-      }
-      if (matchesHotkey(event, groupForwardHotkeyRef.current)) {
-        event.preventDefault();
-        event.stopPropagation();
-        navigateHistory('forward', 'group');
-        return;
-      }
+      endHudWalkIfModifiersReleased(event);
       if (matchesHotkey(event, groupHotkeyRef.current)) {
         event.preventDefault();
         event.stopPropagation();
@@ -206,12 +280,19 @@ export function App(): React.ReactElement | null {
       event.stopPropagation();
       toggleAll();
     };
+
+    const onKeyUp = (event: KeyboardEvent): void => {
+      endHudWalkIfModifiersReleased(event);
+    };
+
     // Window capture runs before document-level page shortcuts (YouTube, etc.).
     window.addEventListener('keydown', onKeyDown, { capture: true });
+    window.addEventListener('keyup', onKeyUp, { capture: true });
     return () => {
       window.removeEventListener('keydown', onKeyDown, { capture: true });
+      window.removeEventListener('keyup', onKeyUp, { capture: true });
     };
-  }, [toggleAll, toggleGroup, navigateHistory]);
+  }, [toggleAll, toggleGroup, navigateHistory, matchesNavHotkey, endHudWalkIfModifiersReleased]);
 
   const close = useCallback(() => {
     setPalette(CLOSED_PALETTE);

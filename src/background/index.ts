@@ -1,7 +1,7 @@
 import { isRpcRequest } from '../types/messages';
 import { handleRpc } from './rpc';
 import { cleanupSingletonGroups, handleTabNavigation } from './groupingService';
-import { handleTabActivatedMru } from './hudMruCommit';
+import { handleTabActivatedMru, handleTabUrlUpdatedMru, clearPendingActivationMru } from './mruRecording';
 import { sendToTab } from './pushMessaging';
 import { performTabNavigation } from './tabNavigation';
 import { registerOmnibox } from './omniboxService';
@@ -80,11 +80,12 @@ chrome.tabs.onActivated.addListener((activeInfo) => {
     .get(activeInfo.tabId)
     .then((tab) => {
       const url = tab.url ?? tab.pendingUrl ?? '';
-      handleTabActivatedMru(activeInfo.tabId, url);
+      return handleTabActivatedMru(activeInfo.tabId, url);
     })
     .catch(() => undefined);
 });
-chrome.tabs.onRemoved.addListener(() => {
+chrome.tabs.onRemoved.addListener((tabId) => {
+  clearPendingActivationMru(tabId);
   scheduleSnapshotBroadcast();
   void cleanupSingletonGroups();
 });
@@ -98,6 +99,7 @@ chrome.tabGroups.onUpdated.addListener(scheduleSnapshotBroadcast);
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.url !== undefined) {
     void handleTabNavigation(tabId);
+    handleTabUrlUpdatedMru(tabId, changeInfo.url);
   }
 
   // Only rebroadcast on fields the palette actually displays.

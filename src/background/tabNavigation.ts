@@ -1,12 +1,16 @@
 import type { BackgroundPush } from '../types/messages';
+import type { ChordModifiers } from '../services/settings';
+import { getSettings, modifiersFromHotkey } from '../services/settings';
 import type { NavDirection, NavScope } from './tabHistoryService';
 import { navigateHistory } from './tabHistoryService';
-import { scheduleHudWalkCommit } from './hudMruCommit';
+import { prepareHudWalkStep, markHudWalkShown } from './hudMruCommit';
 import { activateTab, getTabsByIds } from './tabsService';
 
 /** Ignore duplicate back/forward triggers from manifest commands + content script. */
 const NAV_DEBOUNCE_MS = 100;
 let lastNavAt = 0;
+/** Bumps on each HUD nav so stale async completions cannot reopen the overlay. */
+let hudNavGeneration = 0;
 
 /**
  * MRU back/forward tab switching shared by `chrome.commands` and the content
@@ -16,6 +20,7 @@ export async function performTabNavigation(
   direction: NavDirection,
   scope: NavScope = 'all',
   sendToTab: (tabId: number, message: BackgroundPush) => Promise<void>,
+  modifiers?: ChordModifiers,
 ): Promise<void> {
   const now = Date.now();
   if (now - lastNavAt < NAV_DEBOUNCE_MS) return;
@@ -32,10 +37,14 @@ export async function performTabNavigation(
   try {
     const tab = await chrome.tabs.get(result.targetId);
     if (tab.id === undefined) return;
-    await activateTab(tab.id, tab.windowId);
     const url = tab.url ?? tab.pendingUrl ?? '';
-    if (url) scheduleHudWalkCommit(tab.id, url);
-    await showSwitcherHud(result.order, result.targetId, sendToTab);
+    const walkModifiers =
+      modifiers ?? modifiersFromHotkey((await getSettings()).backHotkey);
+    const generation = ++hudNavGeneration;
+    const walkToken = await prepareHudWalkStep(tab.id, url, walkModifiers);
+    await activateTab(tab.id, tab.windowId);
+    if (generation !== hudNavGeneration) return;
+    await showSwitcherHud(result.order, result.targetId, walkToken, sendToTab);
   } catch {
     // Tab vanished between lookup and activation — nothing to do.
   }
@@ -44,10 +53,17 @@ export async function performTabNavigation(
 async function showSwitcherHud(
   order: number[],
   targetId: number,
+  walkToken: number,
   sendToTab: (tabId: number, message: BackgroundPush) => Promise<void>,
 ): Promise<void> {
   const tabs = await getTabsByIds(order);
   const activeIndex = tabs.findIndex((tab) => tab.id === targetId);
   if (activeIndex === -1) return;
-  await sendToTab(targetId, { type: 'SHOW_TAB_SWITCHER', tabs, activeIndex });
+  await markHudWalkShown(walkToken);
+  await sendToTab(targetId, {
+    type: 'SHOW_TAB_SWITCHER',
+    tabs,
+    activeIndex,
+    walkToken,
+  });
 }

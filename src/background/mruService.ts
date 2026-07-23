@@ -72,6 +72,27 @@ export async function recordUrl(url: string): Promise<void> {
   await writeVisits(visits);
 }
 
+/**
+ * Inserts a URL directly after the current MRU head — used when a tab loaded in
+ * the background after the user had already moved on to a newer tab.
+ */
+export async function recordUrlAfterHead(url: string): Promise<void> {
+  if (!isTrackableUrl(url)) return;
+
+  const current = await getMru();
+  const without = current.filter((entry) => entry !== url);
+  const next =
+    without.length === 0
+      ? [url]
+      : [without[0], url, ...without.slice(1)].slice(0, MAX_MRU_ENTRIES);
+  await chrome.storage.local.set({ [MRU_KEY]: next });
+
+  const visits = await readVisits();
+  const prev = visits[url];
+  visits[url] = { count: (prev?.count ?? 0) + 1, lastAt: Date.now() };
+  await writeVisits(visits);
+}
+
 /** URLs ranked by visit count, then recency. */
 export async function getRankedVisits(
   limit: number,

@@ -1,4 +1,5 @@
 import type { PaletteAction } from '../commands/types';
+import type { ChordModifiers } from '../services/settings';
 import type { FrequentSite, TabClusterRef, TabGroupsSnapshot } from './groups';
 import type { PaletteTab } from './tab';
 
@@ -24,7 +25,8 @@ export interface PaletteSnapshot {
 export type RpcRequest =
   | { type: 'GET_SNAPSHOT' }
   | { type: 'RUN_ACTION'; action: PaletteAction }
-  | { type: 'NAVIGATE_TAB_HISTORY'; direction: 'back' | 'forward'; scope: 'all' | 'group' }
+  | { type: 'NAVIGATE_TAB_HISTORY'; direction: 'back' | 'forward'; scope: 'all' | 'group'; modifiers?: ChordModifiers }
+  | { type: 'COMMIT_HUD_WALK' }
   | { type: 'GET_TAB_GROUPS' }
   | { type: 'MOVE_CLUSTER_HERE'; cluster: TabClusterRef }
   | { type: 'FOCUS_CLUSTER'; cluster: TabClusterRef }
@@ -38,6 +40,7 @@ export interface RpcResponseMap {
   GET_SNAPSHOT: PaletteSnapshot;
   RUN_ACTION: { ok: true };
   NAVIGATE_TAB_HISTORY: { ok: true };
+  COMMIT_HUD_WALK: { ok: true };
   GET_TAB_GROUPS: TabGroupsSnapshot;
   MOVE_CLUSTER_HERE: { ok: true };
   FOCUS_CLUSTER: { ok: true };
@@ -53,7 +56,8 @@ export type RpcResponseFor<T extends RpcRequest['type']> = RpcResponseMap[T];
 export type BackgroundPush =
   | { type: 'TOGGLE_PALETTE'; scope?: 'all' | 'group'; groupId?: number | undefined }
   | { type: 'SNAPSHOT_CHANGED'; snapshot: PaletteSnapshot }
-  | { type: 'SHOW_TAB_SWITCHER'; tabs: PaletteTab[]; activeIndex: number };
+  | { type: 'SHOW_TAB_SWITCHER'; tabs: PaletteTab[]; activeIndex: number; walkToken: number }
+  | { type: 'DISMISS_HUD' };
 
 /** Type guard for narrowing untyped `chrome.runtime.onMessage` payloads. */
 export function isBackgroundPush(value: unknown): value is BackgroundPush {
@@ -61,6 +65,7 @@ export function isBackgroundPush(value: unknown): value is BackgroundPush {
   const type = (value as { type?: unknown }).type;
   return (
     type === 'TOGGLE_PALETTE' || type === 'SNAPSHOT_CHANGED' || type === 'SHOW_TAB_SWITCHER'
+    || type === 'DISMISS_HUD'
   );
 }
 
@@ -69,6 +74,7 @@ export function isRpcRequest(value: unknown): value is RpcRequest {
   if (typeof value !== 'object' || value === null) return false;
   const type = (value as { type?: unknown }).type;
   return type === 'GET_SNAPSHOT' || type === 'RUN_ACTION' || type === 'NAVIGATE_TAB_HISTORY'
+    || type === 'COMMIT_HUD_WALK'
     || type === 'GET_TAB_GROUPS' || type === 'MOVE_CLUSTER_HERE' || type === 'FOCUS_CLUSTER'
     || type === 'OPEN_FREQUENT_SITE' || type === 'REMOVE_FREQUENT_SITE'
     || type === 'CLOSE_TAB' || type === 'CLOSE_CLUSTER';

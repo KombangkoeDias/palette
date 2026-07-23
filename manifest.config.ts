@@ -52,6 +52,12 @@ export default defineManifest({
     },
     {
       matches: ['<all_urls>'],
+      js: ['src/content/hudKeyboard.ts'],
+      run_at: 'document_start',
+      all_frames: true,
+    },
+    {
+      matches: ['<all_urls>'],
       js: ['src/content/index.tsx'],
       run_at: 'document_idle',
       all_frames: false,

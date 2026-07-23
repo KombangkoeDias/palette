@@ -3,8 +3,9 @@ import { getHostname } from '../utils/url';
 
 /**
  * Domain-based tab grouping: when a tab navigates to an http(s) URL, place it in
- * a native Chrome tab group labeled and colored by domain. When other tabs share
- * the domain, consolidate into that domain's window first.
+ * a native Chrome tab group labeled and colored by domain. When same-domain tabs
+ * already live in another window, those tabs are moved into the navigating tab's
+ * window (the group follows the new tab, not the other way around).
  */
 
 const TAB_GROUP_ID_NONE = -1;
@@ -67,47 +68,7 @@ async function findSameDomainTabsInWindow(
   return tabs.filter((tab) => isGroupableTab(tab) && tabDomain(tab) === domain);
 }
 
-/**
- * Picks the window that should own this domain: most same-domain tabs wins;
- * ties go to a window that already has a group for the domain.
- *
- * Call with *existing* peers only — the navigating tab is always moved into the
- * window that already hosts the domain, not the other way around.
- */
-function pickTargetWindow(peers: readonly chrome.tabs.Tab[]): number {
-  if (peers.length === 0) {
-    return chrome.windows.WINDOW_ID_CURRENT;
-  }
-
-  const byWindow = new Map<number, chrome.tabs.Tab[]>();
-  for (const tab of peers) {
-    const list = byWindow.get(tab.windowId) ?? [];
-    list.push(tab);
-    byWindow.set(tab.windowId, list);
-  }
-
-  let bestWindowId = peers[0]?.windowId ?? chrome.windows.WINDOW_ID_CURRENT;
-  let bestScore = -1;
-
-  for (const [windowId, windowTabs] of byWindow) {
-    let score = windowTabs.length;
-    const hasGroup = windowTabs.some((t) => t.groupId !== TAB_GROUP_ID_NONE);
-    if (hasGroup) score += 100;
-    if (score > bestScore) {
-      bestScore = score;
-      bestWindowId = windowId;
-    }
-  }
-
-  return bestWindowId;
-}
-
-async function isAlreadyGrouped(
-  tab: chrome.tabs.Tab,
-  domain: string,
-  targetWindowId: number,
-): Promise<boolean> {
-  if (tab.windowId !== targetWindowId) return false;
+async function isAlreadyGrouped(tab: chrome.tabs.Tab, domain: string): Promise<boolean> {
   if (tab.groupId === TAB_GROUP_ID_NONE) return false;
   try {
     const group = await chrome.tabGroups.get(tab.groupId);
@@ -117,22 +78,73 @@ async function isAlreadyGrouped(
   }
 }
 
+/**
+ * Moves same-domain peers from other windows into `targetWindowId`, preserving
+ * relative order. Marks peers in-flight so our own moves don't re-enter.
+ */
+async function movePeersToWindow(
+  peers: readonly chrome.tabs.Tab[],
+  targetWindowId: number,
+): Promise<void> {
+  const toMove = peers.filter(
+    (peer): peer is chrome.tabs.Tab & { id: number } =>
+      peer.id !== undefined && peer.windowId !== targetWindowId,
+  );
+  if (toMove.length === 0) return;
+
+  for (const peer of toMove) {
+    inFlight.add(peer.id);
+  }
+  try {
+    for (const peer of toMove) {
+      await chrome.tabs.move(peer.id, { windowId: targetWindowId, index: -1 });
+    }
+  } finally {
+    for (const peer of toMove) {
+      inFlight.delete(peer.id);
+    }
+  }
+}
+
+async function findDomainGroupInWindow(
+  windowId: number,
+  domain: string,
+): Promise<number | undefined> {
+  const groups = await chrome.tabGroups.query({ windowId });
+  for (const group of groups) {
+    if (group.title === domain) return group.id;
+  }
+  return undefined;
+}
+
+/** Removes a tab from a group when it was inherited (e.g. "open link in new tab"). */
+async function ungroupIfMismatched(tabId: number, domain: string): Promise<void> {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.groupId === TAB_GROUP_ID_NONE) return;
+    const group = await chrome.tabGroups.get(tab.groupId);
+    if (group.title === domain) return;
+    await chrome.tabs.ungroup(tabId);
+  } catch {
+    // Tab or group changed — ignore.
+  }
+}
+
 async function ensureDomainGroup(domain: string, tabIds: number[]): Promise<void> {
   if (tabIds.length === 0) return;
 
   const first = tabIds[0];
   if (first === undefined) return;
+
+  for (const id of tabIds) {
+    await ungroupIfMismatched(id, domain);
+  }
+
   const idsTuple: [number, ...number[]] =
     tabIds.length === 1 ? [first] : [first, ...tabIds.slice(1)];
 
-  const tabs = await Promise.all(idsTuple.map((id) => chrome.tabs.get(id)));
-  let existingGroupId: number | undefined;
-  for (const t of tabs) {
-    if (t.groupId !== TAB_GROUP_ID_NONE) {
-      existingGroupId = t.groupId;
-      break;
-    }
-  }
+  const anchor = await chrome.tabs.get(first);
+  const existingGroupId = await findDomainGroupInWindow(anchor.windowId, domain);
 
   const groupOptions: chrome.tabs.GroupOptions = { tabIds: idsTuple };
   if (existingGroupId !== undefined) groupOptions.groupId = existingGroupId;
@@ -145,13 +157,9 @@ async function ensureDomainGroup(domain: string, tabIds: number[]): Promise<void
   });
 }
 
-function isTab(value: unknown): value is chrome.tabs.Tab {
-  return typeof value === 'object' && value !== null && 'id' in value;
-}
-
 /**
  * On navigation: place the tab in a native Chrome group for its domain. When
- * other tabs share the domain, consolidate into that domain's window first.
+ * same-domain tabs already exist elsewhere, move them into this tab's window.
  */
 export async function handleTabNavigation(tabId: number): Promise<void> {
   if (inFlight.has(tabId)) return;
@@ -168,44 +176,27 @@ export async function handleTabNavigation(tabId: number): Promise<void> {
     if (domain === '') return;
 
     const peers = await findSameDomainTabs(domain, tabId);
-    const targetWindowId = peers.length === 0 ? tab.windowId : pickTargetWindow(peers);
+    const targetWindowId = tab.windowId;
+    const peersElsewhere = peers.some((peer) => peer.windowId !== targetWindowId);
 
-    if (await isAlreadyGrouped(tab, domain, targetWindowId)) return;
+    // Already in the right domain group in this window, and nothing to pull in.
+    if (!peersElsewhere && (await isAlreadyGrouped(tab, domain))) return;
 
-    const wasActive = tab.active;
-    let currentTab = tab;
-
-    if (tab.windowId !== targetWindowId && tab.id !== undefined) {
-      const movedUnknown: unknown = await chrome.tabs.move(tab.id, {
-        windowId: targetWindowId,
-        index: -1,
-      });
-      if (Array.isArray(movedUnknown)) {
-        const first: unknown = movedUnknown[0];
-        if (isTab(first)) currentTab = first;
-      } else if (isTab(movedUnknown)) {
-        currentTab = movedUnknown;
-      }
-    }
+    await movePeersToWindow(peers, targetWindowId);
 
     const sameDomainInTarget = await findSameDomainTabsInWindow(domain, targetWindowId);
     const tabIds = sameDomainInTarget
       .map((t) => t.id)
       .filter((id): id is number => id !== undefined);
 
-    if (currentTab.id !== undefined && !tabIds.includes(currentTab.id)) {
-      tabIds.push(currentTab.id);
+    if (tab.id !== undefined && !tabIds.includes(tab.id)) {
+      tabIds.push(tab.id);
     }
 
     await ensureDomainGroup(domain, tabIds);
 
-    if (wasActive && currentTab.id !== undefined) {
-      await chrome.tabs.update(currentTab.id, { active: true });
-      try {
-        await chrome.windows.update(targetWindowId, { focused: true });
-      } catch {
-        // Window closed in a race — ignore.
-      }
+    if (tab.active && tab.id !== undefined) {
+      await chrome.tabs.update(tab.id, { active: true });
     }
   } catch (error: unknown) {
     console.error('[Palette] domain grouping failed', error);
